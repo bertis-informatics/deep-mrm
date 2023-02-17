@@ -1,0 +1,42 @@
+# Environment variables go here, can be read by `python-dotenv` package:
+
+PDAC-SIT:
+  ROOT_DIR: '/home/jungkap/msdata/PDAC_SIT'
+  MZML_DIR: '/home/jungkap/msdata/PDAC_SIT/PDAC_MRM_KU/mzML'
+  MANUAL_DIR: '/home/jungkap/msdata/PDAC_SIT/ratio_manual'
+  SKYLINE_DIR: '/home/jungkap/msdata/PDAC_SIT/skyline_selected'
+  TRANSITION_FILE: 'PDAC_MRM_Transition_List_2021.xlsx'
+
+SCL-MASTOCHK1:
+  ROOT_DIR: '/home/jungkap/msdata/SCL_rawdata'
+  MZML_DIR: '/home/jungkap/msdata/SCL_rawdata/mzML'
+
+OVARIAN_CANCER:
+  ROOT_DIR: '/home/jungkap/msdata/MRM_ovarian_cancer'
+  MZML_DIR: '/home/jungkap/msdata/MRM_ovarian_cancer/mzML'  
+  TRANSITION_FILE: 'Heavy peptide RT Transition list_ovarian cancer.xlsx'
+
+EOC:
+  ROOT_DIR: '/home/jungkap/msdata/MRM_EOC'
+  MZML_DIR: 'ccms_peak/Rawfiles'
+  TRANSITION_FILE: 'methods/Ovarian_Cancer_transition_list.csv'
+  SKYLINE_DIR: 'other/Skylinefiles'
+
+P100_PRM:
+  ROOT_DIR: '/home/jungkap/msdata/PRM_P100'
+  MZML_DIR: 'mzml'
+  SKYLINE_DIR: 'skyline'
+
+P100_DIA:
+  ROOT_DIR: '/home/jungkap/msdata/DIA_P100'
+  MZML_DIR: 'mzml'
+  SKYLINE_DIR: 'quant/P100'
+  LABEL_TYPES: ['Manual', 'AvG', 'Skyline']
+
+Ariadne:
+  ROOT_DIR: '/home/jungkap/msdata/Ariadne'
+
+
+
+  
+  
