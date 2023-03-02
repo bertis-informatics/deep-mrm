@@ -194,11 +194,15 @@ for i, dataset in enumerate(datasets):
             spc = spearmanr(y_true, y_pred)
 
             pep_quant_df = pd.concat((y_true, pd.DataFrame(y_pred, columns=[ratio_col], index=y_true.index)), axis=1)
-            pep_quant_df['relative_error'] = 100*(pep_quant_df['Heavy peptide abundance (fmole)'] - pep_quant_df[ratio_col]).abs()/pep_quant_df['Heavy peptide abundance (fmole)']
+            
+            ape = (pep_quant_df['Heavy peptide abundance (fmole)'] - pep_quant_df[ratio_col]).abs()/pep_quant_df['Heavy peptide abundance (fmole)']
+            # Use MAAPE instead of MAPE (close-to-zero values)
+            # https://www.sciencedirect.com/science/article/pii/S0169207016000121?via%3Dihub
+            pep_quant_df['APE'] = ape
+            pep_quant_df['AAPE'] = np.arctan(ape)
             pep_quant_df['peptide_id'] = pep_id
             # pep_quant_df.join(sub_df['Score_DeepMRM'])
             pep_quant_dfs.append(pep_quant_df)
-
             corr_ret.append([pep_id, pcc[0], spc[0]])
 
         corr_df = pd.DataFrame(corr_ret, columns=['peptide_id', 'PCC', 'SPC'])
@@ -207,7 +211,8 @@ for i, dataset in enumerate(datasets):
         tbl_ret[dataset][method]['#peaks'] = num_measurements # np.sum(m)
         tbl_ret[dataset][method]['PCC'] = corr_df['PCC'].mean()
         tbl_ret[dataset][method]['SPC'] = corr_df['SPC'].mean()
-        tbl_ret[dataset][method]['MAPE'] = pep_quant_dfs['relative_error'].mean()
+        tbl_ret[dataset][method]['MAPE'] = pep_quant_dfs['APE'].mean()
+        tbl_ret[dataset][method]['MAAPE'] = pep_quant_dfs['AAPE'].mean()
         quant_ret[dataset][method] = pep_quant_dfs
 
         pep_quant_dfs['Log2 [Heavy peptide abundance]'] = \
@@ -265,10 +270,6 @@ if average_over_replicates:
 else:
     corr_df.to_csv('./reports/ariadne_corr.csv')
     
-
-# pep_quant_df = quant_ret['noisy']['DeepMRM']
-# pep_quant_df.loc[pep_quant_df['relative_error'] > 200, 'peptide_id'].unique()
-
 
 ##################### accuracy plot ############################
 fig, axs = plt.subplots(len(datasets), 3, figsize=(17, 14))
