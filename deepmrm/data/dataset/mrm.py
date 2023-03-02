@@ -44,12 +44,17 @@ class MRMDataset(BaseDataset):
     def num_targets(self):
         return self.transition_data.num_targets
     
-    def find_chromatogram_index(self, q1, q3, tolerance):
+    def find_chromatogram_index(self, q1, q3, tolerance, rt_in_seconds=None):
 
         meta_df = self.chrom_meta_df
         mz_tolerance = tolerance.get_mz_tolerance(max(q1, q3))
+
+        if rt_in_seconds is not None:
+            mask = (meta_df['min_rt'] <= rt_in_seconds) & (rt_in_seconds <= meta_df['max_rt'])
+            meta_df = meta_df[mask]
+
         mz_diff = (meta_df['precursor_mz'] - q1).abs() + (meta_df['product_mz'] - q3).abs()
-        chrom_idx = np.argmin(mz_diff)
+        chrom_idx = mz_diff.index[mz_diff.argmin()]
 
         if mz_diff[chrom_idx] > mz_tolerance:
             raise ValueError(f'Cannot find chromatogram for ({q1}, {q3}) transition')
@@ -57,39 +62,55 @@ class MRMDataset(BaseDataset):
         return int(chrom_idx)        
 
 
-    def extract_data(self, tolerance):
+    def extract_data(self, tolerance, filter_by_rt=False):
+        # self.isolation_wins = [
+        #         (chrom.get_isolation_window(q=1), chrom.get_isolation_window(q=3))
+        #             for chrom in self.ms_reader.read_chromatograms()]
         
-        self.isolation_wins = [
-                (chrom.get_isolation_window(q=1), chrom.get_isolation_window(q=3))
-                    for chrom in self.ms_reader.read_chromatograms()]
+        # self.chrom_meta_df = pd.DataFrame(
+        #                         [(wins[0].mz, wins[1].mz) for wins in self.isolation_wins],
+        #                         columns=['precursor_mz', 'product_mz'])
+        chrom_list = []
+        for chrom in self.ms_reader.read_chromatograms():
+            precursor_win = chrom.get_isolation_window(q=1)
+            product_win = chrom.get_isolation_window(q=3)
+            peaks = chrom.get_peaks()
+            min_rt = peaks[0].retention_time
+            max_rt = peaks[-1].retention_time
+            chrom_list.append([precursor_win.mz, product_win.mz, min_rt, max_rt])
         
-        self.chrom_meta_df = pd.DataFrame(
-                                [(wins[0].mz, wins[1].mz) for wins in self.isolation_wins],
-                                columns=['precursor_mz', 'product_mz'])
+        self.chrom_meta_df = pd.DataFrame(chrom_list, 
+                                columns=['precursor_mz', 'product_mz', 'min_rt', 'max_rt'])
 
         self.chrom_index_map = dict()
         precursor_mz_col = self.transition_data.precursor_mz_col
         product_mz_col = self.transition_data.product_mz_col
+        rt_col = self.transition_data.rt_col
+        filter_by_rt &= rt_col is not None
 
         for pep_id, heavy_df, light_df in self.transition_data.iterate_peptide():
             map_ret = []
             num_transitions =  light_df.shape[0]
+            rt = heavy_df[rt_col].iat[0]*60 if filter_by_rt else None
+
             for idx in range(num_transitions):
                 light_trans, heavy_trans = light_df.iloc[idx], heavy_df.iloc[idx]
                 
                 try:
                     light_chrom_idx = self.find_chromatogram_index(
-                                        light_trans[precursor_mz_col], 
-                                        light_trans[product_mz_col], 
-                                        tolerance)
+                                        q1=light_trans[precursor_mz_col], 
+                                        q3=light_trans[product_mz_col], 
+                                        tolerance=tolerance,
+                                        rt_in_seconds=rt)
                     heavy_chrom_idx = self.find_chromatogram_index(
-                                        heavy_trans[precursor_mz_col], 
-                                        heavy_trans[product_mz_col], 
-                                        tolerance)             
+                                        q1=heavy_trans[precursor_mz_col], 
+                                        q3=heavy_trans[product_mz_col], 
+                                        tolerance=tolerance,
+                                        rt_in_seconds=rt)
                     map_ret.append((LIGHT_PEPTIDE_KEY, idx, light_chrom_idx))
                     map_ret.append((HEAVY_PEPTIDE_KEY, idx, heavy_chrom_idx))
                 except:
-                    pass                       
+                    pass      
             
             n = heavy_df.shape[0]
             m = int(len(map_ret)*0.5)

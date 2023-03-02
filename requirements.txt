@@ -13,7 +13,7 @@ torchmetrics>0.6.2
 tqdm
 joblib
 pyopenms
-opencv-python
+# opencv-python
 # matplotlib
 # lightgbm>=3.2.1
 # seaborn

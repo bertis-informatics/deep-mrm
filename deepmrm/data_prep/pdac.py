@@ -1,15 +1,16 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+import joblib
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
-from pyopenms import (
-    AASequence, Residue, 
-    OnDiscMSExperiment, MzMLFile, MSExperiment
-) 
+from pyopenms import AASequence, Residue, MzMLFile
 from deepmrm.data.mrm_experiment import MRMExperiment
-from deepmrm import data_dir, get_yaml_config
+from deepmrm import data_dir, get_yaml_config, private_data_dir
+from deepmrm.data.dataset import MRMDataset
+from deepmrm.data.transition import TransitionData
+from mstorch.data.mass_spec.tolerance import Tolerance
 
 _conf = get_yaml_config()
 conf = _conf['PDAC-SIT']
@@ -25,21 +26,28 @@ def get_msdata_df():
     Returns:
         pd.DataFrame: file list with metadata
     """
-    ms_files = list()
-    for fname in PDAC_SIT_MS_DIR.iterdir():
-        if fname.is_file():
-            file_name = fname.name
-            s = file_name.split('_')
-            patient_id = int(s[1])
-            replicate_id = int(s[2])
-            ms_files.append([patient_id, replicate_id, file_name])
+    save_path = Path(data_dir / 'PDAC_SIT_files.csv')
+    
+    if not save_path.exists():
+        ms_files = list()
+        for fname in PDAC_SIT_MS_DIR.iterdir():
+            if fname.is_file():
+                file_name = fname.name
+                s = file_name.split('_')
+                patient_id = int(s[1])
+                replicate_id = int(s[2])
+                ms_files.append([patient_id, replicate_id, file_name])
 
-    df = pd.DataFrame(ms_files, columns=['patient_id', 'replicate_id', 'mzML'])
-    df = df.sort_values(['patient_id', 'replicate_id']).reset_index(drop=True)
+        df = pd.DataFrame(ms_files, columns=['patient_id', 'replicate_id', 'mzML'])
+        df = df.sort_values(['patient_id', 'replicate_id']).reset_index(drop=True)
 
-    # reset replicate id (one-based index)
-    for grp, sub_df in df.groupby('patient_id'):
-        df.loc[sub_df.index, 'replicate_id'] = np.arange(1, sub_df.shape[0]+1)
+        # reset replicate id (one-based index)
+        for grp, sub_df in df.groupby('patient_id'):
+            df.loc[sub_df.index, 'replicate_id'] = np.arange(1, sub_df.shape[0]+1)
+
+        df.to_csv(save_path, index=False)
+    else:
+        df = pd.read_csv(save_path)
 
     return df
 
@@ -49,43 +57,59 @@ def get_transition_df():
     Returns:
         [type]: [description]
     """
-    tran_df = pd.read_excel(PDAC_SIT_DIR / TRANSITION_FILE)
-    tran_df['Heavy'] = tran_df['Compound Name'].str.endswith('.heavy')
-    
-    tran_df['Sequence'] = tran_df['Compound Name'].replace({
-            '\[pS\]': 'S(Phospho)', 
-            '\[pT\]': 'T(Phospho)',
-            '\(IAA\)': '(Carbamidomethyl)',
-            '.heavy': '(Label:13C(6))',
-            '.light': ''
-            }, regex=True).apply(AASequence.fromString)
+    save_path = Path(data_dir / 'PDAC_SIT_transition.csv')
 
-    precursor_mass = tran_df['Sequence'].apply(lambda seq: seq.getMonoWeight(Residue.ResidueType.Full, 2))
-    tran_df['Precursor Charge'] = (precursor_mass / tran_df['Precursor Ion']).round().astype(int)
-    tran_df.index.name = 'compound_idx'
+    if not save_path.exists():
+        tran_df = pd.read_excel(PDAC_SIT_DIR / TRANSITION_FILE)
+        # tran_df = pd.read_excel(private_data_dir / TRANSITION_FILE)
+        # tran_df['Heavy'] = tran_df['Compound Name'].str.endswith('.heavy')
+        peptide_sequence = tran_df['Compound Name'].replace({
+                '\[pS\]': 'S(Phospho)', 
+                '\[pT\]': 'T(Phospho)',
+                '\(IAA\)': '(Carbamidomethyl)',
+                '.heavy': '(Label:13C(6))',
+                '.light': ''
+                }, regex=True).apply(AASequence.fromString)
+
+        precursor_mass = peptide_sequence.apply(lambda seq: seq.getMonoWeight(Residue.ResidueType.Full, 2))
+        tran_df['Precursor Charge'] = (precursor_mass / tran_df['Precursor Ion']).round().astype(int)
+        # tran_df.index.name = 'compound_idx'
+        cols_rename = {
+            'Compound Group': 'peptide_id', 
+            'ISTD?': 'is_heavy', 
+            'Precursor Ion': 'precursor_mz', 
+            'Product Ion': 'product_mz', 
+            'Ret Time (min)': 'rt',
+            'Precursor Charge': 'precursor_charge'
+        }
+
+        tran_df = tran_df[list(cols_rename)].rename(columns=cols_rename)
+        tran_df.to_csv(save_path, index=False)
+    else:
+        tran_df = pd.read_csv(save_path)
 
     return tran_df
 
 
-def get_compact_transition_df():
+# def get_compact_transition_df():
     
-    trans_df = get_transition_df()
-    compact_trans_df = trans_df.drop_duplicates(
-                        ['Compound Group', 'Compound Name', 'Ret Time (min)'], 
-                        keep='first')
-    selected_cols = [
-        'Compound Group', 'Compound Name', 'Ret Time (min)',
-        'Sequence', 'Heavy'
-    ]
+#     trans_df = get_transition_df()
+#     compact_trans_df = trans_df.drop_duplicates(
+#                         ['Compound Group', 'Compound Name', 'Ret Time (min)'], 
+#                         keep='first')
+#     selected_cols = [
+#         'Compound Group', 'Compound Name', 'Ret Time (min)',
+#         'Sequence', 'Heavy'
+#     ]
 
-    compact_trans_df =compact_trans_df[selected_cols].reset_index(drop=True)
-    compact_trans_df.index.name = 'compound_idx'
+#     compact_trans_df =compact_trans_df[selected_cols].reset_index(drop=True)
+#     compact_trans_df.index.name = 'compound_idx'
 
-    return compact_trans_df
+#     return compact_trans_df
 
 
 
-def extract_manual_data(df, sheet):
+def _extract_manual_data(df, sheet):
     df = df.replace({'X': np.nan, '-': np.nan})
     headers = [header_col[0] for header_col in df.columns]
     ratio_index = headers.index('Final Endo/SIL ratio after inspection')
@@ -161,7 +185,7 @@ def extract_manual_data(df, sheet):
     return pd.DataFrame(all_records, columns=cols)
 
 
-def create_label_df():
+def _create_label_df():
     dfs = []
     for fname in PDAC_SIT_MANUAL_DIR.iterdir():
         if not fname.is_file() or not fname.name.startswith('PDAC'):
@@ -178,7 +202,7 @@ def create_label_df():
             sh_name = sheet_names[sheet_idx]
             df = pd.read_excel(fname, sheet_name=sheet_idx, header=[0, 1, 2])
             sh = wb[sh_name]
-            df = extract_manual_data(df, sh)
+            df = _extract_manual_data(df, sh)
             df['patient_id'] = patient_id
             df['replicate_id'] = sheet_idx + 1
             dfs.append(df)
@@ -192,7 +216,7 @@ def get_label_df():
     if fpath.exists():
         label_df = pd.read_csv(fpath)
     else:
-        label_df = create_label_df()
+        label_df = _create_label_df()
         # manual correction (Excel file has been updated)
         # m = (label_df['patient_id'] == 211) & (label_df['replicate_id'] == 1) & \
         #     (label_df['peptide_code'] == 'PDAC0097')
@@ -209,21 +233,26 @@ def get_label_df():
     label_df = label_df.merge(ms_df, 
                             on=['patient_id', 'replicate_id'], 
                             how='inner')\
-                       .reset_index(drop=True)
+                       .reset_index(drop=True)\
+                       .rename(columns={'peptide_code': 'peptide_id'})
     label_df.index.name = 'label_idx'
 
     return label_df
 
 
-def create_chrom_df():
-
-    save_path = data_dir / 'PDAC_SIT_chrom.pkl'
+def _create_chrom_df():
+    # save_path = private_data_dir / 'PDAC_SIT_chrom.pkl'
+    # chrom_df = pd.read_pickle(save_path)
+    save_path = data_dir / 'PDAC_SIT_xic.pkl'
     ms_df = get_msdata_df()
-    trans_df = get_compact_transition_df()
-    sequences = trans_df.loc[:, 'Sequence']
-    retention_times = trans_df.loc[:, 'Ret Time (min)']
+    trans_df = get_transition_df()
+    label_df = get_label_df()
+    # trans_df = get_compact_transition_df()
+    # sequences = trans_df.loc[:, 'Sequence']
+    # retention_times = trans_df.loc[:, 'Ret Time (min)']
+    # trans_data = TransitionData(trans_df, rt_col='rt')
 
-    all_dfs = []
+    xic_data = dict()
     for file_id, row in ms_df.iterrows():
         print(f'File index: {file_id}')
         mzml_file = row['mzML']
@@ -231,57 +260,208 @@ def create_chrom_df():
         replicate_id = row['replicate_id']
 
         mzml_path = PDAC_SIT_MS_DIR / mzml_file
-        exp = MRMExperiment()
-        mzml = MzMLFile()
-        mzml.load(str(mzml_path), exp)
-        match_df = exp.get_match_df(sequences=sequences, retention_times=retention_times, mz_tolerance=0.3)
+        
+        label_mask = (label_df['patient_id'] == patient_id) & (label_df['replicate_id'] == replicate_id)
+        temp_label_df = label_df[label_mask]
+        # pep_id_to_label_idx_map = temp_label_df[['peptide_code']].reset_index(drop=False).set_index('peptide_code')
 
-        T = match_df.groupby(['compound_idx'])['chrom_idx'].count()
-        if T.shape[0] != trans_df.shape[0]:
-            print(f'missing peptides in {mzml_file} ')
-            print( np.setdiff1d(trans_df.index, T.index) )
-            break
+        if np.sum(label_mask) == 0:
+            # skip no label data
+            continue
 
-        if np.any(T < 3):
-            print(f'missing transitions in {mzml_file} ')
-            break
+        temp_trans_df = trans_df.merge(
+                            temp_label_df[['peptide_code', 'selected_charge']],
+                            left_on=['peptide_id', 'precursor_charge'],
+                            right_on=['peptide_code', 'selected_charge'],
+                            how='inner'
+                        )
+        assert temp_trans_df.shape[0] == 153 * 6, 'number of transitions mismatch'
+        trans_data = TransitionData(temp_trans_df, rt_col='rt')
+        ds = MRMDataset(
+            file_path=mzml_path,
+            transition_data=trans_data,
+        )
+        tolerance = Tolerance(100)
+        ds.extract_data(tolerance, filter_by_rt=True)
 
-        match_df['patient_id'] = patient_id
-        match_df['replicate_id'] = replicate_id
-        xics = []
-        for chrom_idx in match_df['chrom_idx']:
-            x, y = exp.getChromatogram(chrom_idx).get_peaks()
-            xics.append(np.stack((x, y)).astype(np.float32))
-        match_df['XIC'] = xics
-        all_dfs.append(match_df)
+        for i in range(len(ds)):
+            sample = ds[i]
+            pep_id = sample['peptide_id']
+            # label_idx = pep_id_to_label_idx_map.at[pep_id, 'label_idx']
+            key = (patient_id, replicate_id, pep_id)
+            xic_data[key] = sample['XIC']
+
+    joblib.dump(xic_data, save_path)
+
+    #     # mzml_path = private_data_dir.parent / mzml_file
+    #     exp = MRMExperiment()
+    #     mzml = MzMLFile()
+    #     mzml.load(str(mzml_path), exp)
+        
+    #     match_df = exp.get_match_df(sequences=sequences, retention_times=retention_times, mz_tolerance=0.3)
+
+    #     T = match_df.groupby(['compound_idx'])['chrom_idx'].count()
+    #     if T.shape[0] != trans_df.shape[0]:
+    #         print(f'missing peptides in {mzml_file} ')
+    #         print( np.setdiff1d(trans_df.index, T.index) )
+    #         break
+
+    #     if np.any(T < 3):
+    #         print(f'missing transitions in {mzml_file} ')
+    #         break
+
+    #     match_df['patient_id'] = patient_id
+    #     match_df['replicate_id'] = replicate_id
+    #     xics = []
+    #     for chrom_idx in match_df['chrom_idx']:
+    #         x, y = exp.getChromatogram(chrom_idx).get_peaks()
+    #         xics.append(np.stack((x, y)).astype(np.float32))
+    #     match_df['XIC'] = xics
+    #     all_dfs.append(match_df)
     
-    all_match_df = pd.concat(all_dfs)
-    dtypes_dict = {
-        'chrom_idx': np.uint16,
-        'mz_error': np.float32,
-        'precursor_ion_charge': np.uint8,
-        'product_ion_charge': np.uint8,
-        'cleavage_index': np.uint8,
-        'compound_idx': np.uint16,
-        'precursor_mz': np.float32,
-        'product_mz': np.float32,
-        'min_rt': np.float32,
-        'max_rt': np.float32,
-        'patient_id': np.uint16,
-        'replicate_id': np.uint8,
-    }
-    all_match_df = all_match_df.astype(dtypes_dict)
-    all_match_df.to_pickle(save_path)
+    # all_match_df = pd.concat(all_dfs)
+    # dtypes_dict = {
+    #     'chrom_idx': np.uint16,
+    #     'mz_error': np.float32,
+    #     'precursor_ion_charge': np.uint8,
+    #     'product_ion_charge': np.uint8,
+    #     'cleavage_index': np.uint8,
+    #     'compound_idx': np.uint16,
+    #     'precursor_mz': np.float32,
+    #     'product_mz': np.float32,
+    #     'min_rt': np.float32,
+    #     'max_rt': np.float32,
+    #     'patient_id': np.uint16,
+    #     'replicate_id': np.uint8,
+    # }
+    # all_match_df = all_match_df.astype(dtypes_dict)
+    # all_match_df.to_pickle(save_path)
+    # return all_match_df
 
-    return all_match_df
+# def get_chrom_df():
+#     save_path = data_dir / 'PDAC_SIT_chrom.pkl'
+#     return pd.read_pickle(save_path)
+
+def get_xic_data():
+    save_path = data_dir / 'PDAC_SIT_xic.pkl'
+    return joblib.load(save_path)
 
 
-def get_chrom_df():
-    save_path = data_dir / 'PDAC_SIT_chrom.pkl'
-    return pd.read_pickle(save_path)
+def get_skyline_df():
+
+    save_path = data_dir / 'PDAC_SIT_skyline.csv'
+
+    if not save_path.exists():
+
+        sky_df = _get_skyline_df()
+        trans_df = pd.read_excel(private_data_dir / TRANSITION_FILE)
+        peptide_sequence = trans_df['Compound Name'].replace({
+                    '\[pS\]': 'S(Phospho)', 
+                    '\[pT\]': 'T(Phospho)',
+                    '\(IAA\)': '(Carbamidomethyl)',
+                    '.heavy': '(Label:13C(6))',
+                    '.light': ''
+                    }, regex=True).apply(AASequence.fromString)
+        trans_df['plain_seq'] = peptide_sequence.apply(lambda x : x.toUnmodifiedString())
+
+        assert trans_df['plain_seq'].nunique() == trans_df['Compound Group'].nunique()
+        
+        seq_to_pep_id = trans_df.drop_duplicates(['plain_seq', 'Compound Group'], keep='first')[['plain_seq', 'Compound Group']]
+        seq_to_pep_id = seq_to_pep_id.rename(columns={'Compound Group': 'peptide_id'})
+        sky_df = sky_df.merge(seq_to_pep_id, left_on='sequence', right_on='plain_seq', how='inner').drop(columns=['plain_seq', 'sequence'])
+        sky_df.to_csv(save_path, index=False)
+
+    else:
+        sky_df = pd.read_csv(save_path)
+
+    return sky_df
+
+
+
+def _get_skyline_df():
+
+    save_path = private_data_dir / 'PDAC_SIT_skyline.csv'
+    def extract_pid_rid(x):
+        s = x.split('_')
+        pid = s[1]
+        rid = s[2]
+        if rid == 'Nano':
+            rid = s[-2]
+        return int(pid), int(rid)
+
+    if save_path.exists():
+        df = pd.read_csv(save_path)
+    else:
+        results = list()
+        for sky_path in SKYLINE_DIR.rglob('*.sky'):
+            # fname = 'PDAC_Verification_PDAC73_2_Sub4_060821.sky'
+            # fname = 'PDAC_Verification_254_Re_Sub6.sky'
+            # sky_path = SKYLINE_DIR/fname
+            tree = ET.parse(sky_path)
+            root = tree.getroot()
+            rep_name = root.find('settings_summary').find('measured_results').find('replicate').get('name')
+
+            if sky_path.stem == 'PDAC_153_Rep2_Target_031121_updated':
+                pid, rid = 193, 2
+            elif sky_path.stem == 'PDAC_153_Rep3_Target_031121_updated':
+                pid, rid = 193, 3
+            elif sky_path.stem == 'PDAC_Verification_254_Re_Sub6':
+                pid, rid = 254, 2
+            else:
+                pid, rid = extract_pid_rid(rep_name)
+            
+            for peptide in root.iter('peptide'):
+                sequence = peptide.get('sequence')
+                precursor = peptide.find('precursor')
+                precursor_peak = precursor.find('precursor_results').find('precursor_peak')
+                info = {'patient_id': pid, 'replicate_id': rid, 'sequence': sequence}
+                info.update(precursor_peak.attrib)
+                results.append(info)
+        df = pd.DataFrame.from_dict(results)
+        df.to_csv(save_path, index=False) 
+
+    float_cols = [
+        'peak_count_ratio', 'retention_time', 'start_time',
+        'end_time', 'fwhm', 'area', 'background', 'height'
+    ]
+    for col in float_cols:
+        df[col] = df[col].astype(np.float64)
+    
+    df['patient_id'] = df['patient_id'].astype(int)
+    df['replicate_id'] = df['replicate_id'].astype(int)
+    df = df.sort_values(['patient_id', 'replicate_id', 'sequence'])
+
+    # reset replicate id (one-based index)
+    for grp, sub_df in df.groupby('patient_id'):
+        d = {rid: i+1 for i, rid in enumerate(sub_df['replicate_id'].unique())}
+        if len(d) != 3:
+            ValueError('something wrong')
+        df.loc[sub_df.index, 'replicate_id'] = sub_df['replicate_id'].replace(d)
+
+    return df
 
 
 def get_metadata_df():
+
+    xic_data = get_xic_data()
+    label_df = get_label_df()
+    sky_df = get_skyline_df()
+
+    cols = ['patient_id', 'replicate_id', 'peptide_id', 'start_time', 'end_time']
+    label_df = label_df.reset_index()\
+                       .merge(
+                            sky_df[cols], 
+                            how='inner',
+                            on=cols[:3])\
+                       .set_index('label_idx')
+    
+    label_df['manual_quality'] = label_df['manual_ratio'].notnull().astype(np.int64)
+
+    return label_df, xic_data
+
+
+
+def __get_metadata_df():
     
     cpd_df = get_compact_transition_df()
     chrom_df = get_chrom_df()
@@ -377,99 +557,3 @@ def get_metadata_df():
     return label_df, chrom_df
 
 
-# def extract_chroms():
-#     label_df, chrom_df = get_metadata_df()
-#     label_df = label_df.sort_values(['patient_id', 'replicate_id'])
-
-#     prev_pid = -1
-#     prev_rid = -1
-#     cnt = 0
-#     for label_idx, row in label_df.iterrows():
-#         pid = row['patient_id']
-#         rid = row['replicate_id']
-#         ms_fname = row['mzML']
-#         ms_path = PDAC_SIT_MS_DIR / ms_fname
-        
-#         c_df = chrom_df.loc[label_idx,  :]
-#         if prev_pid != pid or prev_rid != rid:
-#             od_exp = OnDiscMSExperiment()
-#             _ = od_exp.openFile(str(ms_path))
-
-#         times, xic = [], []
-#         for chrom_idx in c_df['chrom_idx']:
-#             x, y = od_exp.getChromatogram(chrom_idx).get_peaks()
-#             times.append(x)
-#             xic.append(y)
-
-#         save_path = f'{PDAC_SIT_TGR_DIR}/{label_idx}.pkl'
-#         _ = joblib.dump((times, xic), save_path)
-#         prev_pid = pid
-#         prev_rid = rid
-#         cnt += 1
-#         if cnt % 100 == 0:
-#             print(cnt)
-
-def get_skyline_df():
-
-    save_path = data_dir / 'PDAC_SIT_skyline.csv'
-    def extract_pid_rid(x):
-        s = x.split('_')
-        pid = s[1]
-        rid = s[2]
-        if rid == 'Nano':
-            rid = s[-2]
-        return int(pid), int(rid)
-
-    if save_path.exists():
-        df = pd.read_csv(save_path)
-    else:
-        results = list()
-        for sky_path in SKYLINE_DIR.rglob('*.sky'):
-            # fname = 'PDAC_Verification_PDAC73_2_Sub4_060821.sky'
-            # fname = 'PDAC_Verification_254_Re_Sub6.sky'
-            # sky_path = SKYLINE_DIR/fname
-            tree = ET.parse(sky_path)
-            root = tree.getroot()
-            rep_name = root.find('settings_summary').find('measured_results').find('replicate').get('name')
-
-            if sky_path.stem == 'PDAC_153_Rep2_Target_031121_updated':
-                pid, rid = 193, 2
-            elif sky_path.stem == 'PDAC_153_Rep3_Target_031121_updated':
-                pid, rid = 193, 3
-            elif sky_path.stem == 'PDAC_Verification_254_Re_Sub6':
-                pid, rid = 254, 2
-            else:
-                pid, rid = extract_pid_rid(rep_name)
-            
-            for peptide in root.iter('peptide'):
-                sequence = peptide.get('sequence')
-                precursor = peptide.find('precursor')
-                precursor_peak = precursor.find('precursor_results').find('precursor_peak')
-                info = {'patient_id': pid, 'replicate_id': rid, 'sequence': sequence}
-                info.update(precursor_peak.attrib)
-                results.append(info)
-        df = pd.DataFrame.from_dict(results)
-        df.to_csv(save_path, index=False) 
-
-    float_cols = [
-        'peak_count_ratio', 'retention_time', 'start_time',
-        'end_time', 'fwhm', 'area', 'background', 'height'
-    ]
-    for col in float_cols:
-        df[col] = df[col].astype(np.float64)
-    
-    df['patient_id'] = df['patient_id'].astype(int)
-    df['replicate_id'] = df['replicate_id'].astype(int)
-    df = df.sort_values(['patient_id', 'replicate_id', 'sequence'])
-
-    # reset replicate id (one-based index)
-    for grp, sub_df in df.groupby('patient_id'):
-        d = {rid: i+1 for i, rid in enumerate(sub_df['replicate_id'].unique())}
-        if len(d) != 3:
-            ValueError('something wrong')
-        df.loc[sub_df.index, 'replicate_id'] = sub_df['replicate_id'].replace(d)
-
-    return df
-
-
-# df = get_skyline_df()
