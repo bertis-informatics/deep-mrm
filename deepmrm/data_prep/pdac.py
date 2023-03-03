@@ -11,7 +11,9 @@ from deepmrm import data_dir, get_yaml_config, private_data_dir
 from deepmrm.data.dataset import MRMDataset
 from deepmrm.data.transition import TransitionData
 from mstorch.data.mass_spec.tolerance import Tolerance
+from mstorch.utils.logger import get_logger
 
+logger = get_logger('DeepMRM')
 _conf = get_yaml_config()
 conf = _conf['PDAC-SIT']
 
@@ -51,6 +53,21 @@ def get_msdata_df():
 
     return df
 
+def _get_raw_transition_df():
+    tran_df = pd.read_excel(private_data_dir / TRANSITION_FILE)
+    peptide_sequence = tran_df['Compound Name'].replace({
+            '\[pS\]': 'S(Phospho)', 
+            '\[pT\]': 'T(Phospho)',
+            '\(IAA\)': '(Carbamidomethyl)',
+            '.heavy': '(Label:13C(6))',
+            '.light': ''
+            }, regex=True).apply(AASequence.fromString)
+
+    precursor_mass = peptide_sequence.apply(lambda seq: seq.getMonoWeight(Residue.ResidueType.Full, 2))
+    tran_df['Sequence'] = peptide_sequence
+    tran_df['Precursor Charge'] = (precursor_mass / tran_df['Precursor Ion']).round().astype(int)
+    return tran_df
+
 
 def get_transition_df():
     """Read a transition list in excel file, and convert it to DataFrame
@@ -60,20 +77,7 @@ def get_transition_df():
     save_path = Path(data_dir / 'PDAC_SIT_transition.csv')
 
     if not save_path.exists():
-        tran_df = pd.read_excel(PDAC_SIT_DIR / TRANSITION_FILE)
-        # tran_df = pd.read_excel(private_data_dir / TRANSITION_FILE)
-        # tran_df['Heavy'] = tran_df['Compound Name'].str.endswith('.heavy')
-        peptide_sequence = tran_df['Compound Name'].replace({
-                '\[pS\]': 'S(Phospho)', 
-                '\[pT\]': 'T(Phospho)',
-                '\(IAA\)': '(Carbamidomethyl)',
-                '.heavy': '(Label:13C(6))',
-                '.light': ''
-                }, regex=True).apply(AASequence.fromString)
-
-        precursor_mass = peptide_sequence.apply(lambda seq: seq.getMonoWeight(Residue.ResidueType.Full, 2))
-        tran_df['Precursor Charge'] = (precursor_mass / tran_df['Precursor Ion']).round().astype(int)
-        # tran_df.index.name = 'compound_idx'
+        tran_df = _get_raw_transition_df()
         cols_rename = {
             'Compound Group': 'peptide_id', 
             'ISTD?': 'is_heavy', 
@@ -247,10 +251,6 @@ def _create_chrom_df():
     ms_df = get_msdata_df()
     trans_df = get_transition_df()
     label_df = get_label_df()
-    # trans_df = get_compact_transition_df()
-    # sequences = trans_df.loc[:, 'Sequence']
-    # retention_times = trans_df.loc[:, 'Ret Time (min)']
-    # trans_data = TransitionData(trans_df, rt_col='rt')
 
     xic_data = dict()
     for file_id, row in ms_df.iterrows():
@@ -267,16 +267,17 @@ def _create_chrom_df():
 
         if np.sum(label_mask) == 0:
             # skip no label data
+            logger.info(f'{mzml_file} is not annotated..Skip')
             continue
 
         temp_trans_df = trans_df.merge(
-                            temp_label_df[['peptide_code', 'selected_charge']],
+                            temp_label_df[['peptide_id', 'selected_charge', 'light_rt']],
                             left_on=['peptide_id', 'precursor_charge'],
-                            right_on=['peptide_code', 'selected_charge'],
+                            right_on=['peptide_id', 'selected_charge'],
                             how='inner'
                         )
-        assert temp_trans_df.shape[0] == 153 * 6, 'number of transitions mismatch'
-        trans_data = TransitionData(temp_trans_df, rt_col='rt')
+
+        trans_data = TransitionData(temp_trans_df, rt_col='light_rt')
         ds = MRMDataset(
             file_path=mzml_path,
             transition_data=trans_data,
@@ -293,54 +294,6 @@ def _create_chrom_df():
 
     joblib.dump(xic_data, save_path)
 
-    #     # mzml_path = private_data_dir.parent / mzml_file
-    #     exp = MRMExperiment()
-    #     mzml = MzMLFile()
-    #     mzml.load(str(mzml_path), exp)
-        
-    #     match_df = exp.get_match_df(sequences=sequences, retention_times=retention_times, mz_tolerance=0.3)
-
-    #     T = match_df.groupby(['compound_idx'])['chrom_idx'].count()
-    #     if T.shape[0] != trans_df.shape[0]:
-    #         print(f'missing peptides in {mzml_file} ')
-    #         print( np.setdiff1d(trans_df.index, T.index) )
-    #         break
-
-    #     if np.any(T < 3):
-    #         print(f'missing transitions in {mzml_file} ')
-    #         break
-
-    #     match_df['patient_id'] = patient_id
-    #     match_df['replicate_id'] = replicate_id
-    #     xics = []
-    #     for chrom_idx in match_df['chrom_idx']:
-    #         x, y = exp.getChromatogram(chrom_idx).get_peaks()
-    #         xics.append(np.stack((x, y)).astype(np.float32))
-    #     match_df['XIC'] = xics
-    #     all_dfs.append(match_df)
-    
-    # all_match_df = pd.concat(all_dfs)
-    # dtypes_dict = {
-    #     'chrom_idx': np.uint16,
-    #     'mz_error': np.float32,
-    #     'precursor_ion_charge': np.uint8,
-    #     'product_ion_charge': np.uint8,
-    #     'cleavage_index': np.uint8,
-    #     'compound_idx': np.uint16,
-    #     'precursor_mz': np.float32,
-    #     'product_mz': np.float32,
-    #     'min_rt': np.float32,
-    #     'max_rt': np.float32,
-    #     'patient_id': np.uint16,
-    #     'replicate_id': np.uint8,
-    # }
-    # all_match_df = all_match_df.astype(dtypes_dict)
-    # all_match_df.to_pickle(save_path)
-    # return all_match_df
-
-# def get_chrom_df():
-#     save_path = data_dir / 'PDAC_SIT_chrom.pkl'
-#     return pd.read_pickle(save_path)
 
 def get_xic_data():
     save_path = data_dir / 'PDAC_SIT_xic.pkl'
@@ -458,102 +411,4 @@ def get_metadata_df():
     label_df['manual_quality'] = label_df['manual_ratio'].notnull().astype(np.int64)
 
     return label_df, xic_data
-
-
-
-def __get_metadata_df():
-    
-    cpd_df = get_compact_transition_df()
-    chrom_df = get_chrom_df()
-    label_df = get_label_df()
-    sky_df = get_skyline_df()
-    # m = sky_df['patient_id'] == 254
-    # m &= sky_df['replicate_id'] == 2
-    # m &= sky_df['sequence'] == 'TSIVQAAAGGVPGGGSNNGK'
-    # sky_df.loc[1644, :]
-        
-    # 1. Merge skyline result 
-    cpd_df['seq_str'] = cpd_df['Sequence'].apply(lambda seq : ''.join([aa.getOneLetterCode() for aa in seq]))
-    m = cpd_df['Heavy'] == True
-    sky_df = sky_df.merge(cpd_df.loc[m, ['seq_str', 'Compound Group']], 
-                how='left',
-                left_on='sequence', 
-                right_on='seq_str').rename(columns={'Compound Group': 'peptide_code'})
-    cols = ['patient_id', 'replicate_id', 'peptide_code', 'start_time', 'end_time']
-    label_df = label_df.reset_index().merge(sky_df[cols], 
-                how='left',
-                on=cols[:3]).set_index('label_idx')
-    
-    # 2. Add peptide_code, is_heavy in chrom_df 
-    chrom_df = chrom_df.merge(
-                    # cpd_df[['Compound Group', 'Ret Time (min)', 'Heavy']], 
-                    cpd_df[['Compound Group', 'Heavy']],
-                    right_index=True, 
-                    left_on='compound_idx')
-
-    rename_dict = {'Compound Group': 'peptide_code', 'Heavy': 'is_heavy'}
-    chrom_df = chrom_df.rename(columns=rename_dict)
-
-    # 3. Join label_index from label_df 
-    key_cols = ['patient_id', 'replicate_id', 'peptide_code']
-    chrom_df = chrom_df.merge(
-                label_df[key_cols + ['selected_charge']].reset_index(drop=False), 
-                left_on=key_cols, 
-                right_on=key_cols, 
-                how='inner')
-    
-    # 4. Filter out XICs with selected charges
-    m = chrom_df['selected_charge'].notnull()
-    m &= chrom_df['precursor_ion_charge'] == chrom_df['selected_charge']
-    chrom_df = chrom_df[m]
-
-    cols = [
-        'label_idx', 'chrom_idx', 'compound_idx', 'is_heavy',
-        'precursor_ion_charge', 'product_ion_charge', 'cleavage_index',
-        'precursor_mz', 'product_mz', 'min_rt', 'max_rt',
-        'XIC'
-    ]
-
-    # 5. data validation
-    # 1) three pairs of heavy and light transitions for each pepetide
-    sort_cols = key_cols + ['is_heavy', 'cleavage_index']
-    chrom_df = chrom_df.sort_values(sort_cols)[cols].set_index('label_idx')
-
-    # for each peptide, there should be 6 transitions
-    trans_per_cpd = chrom_df.groupby(['label_idx'])['chrom_idx'].count()
-    # removed unpaired transitions (i.e. heavy only or light only)
-    label_idx_to_chk = trans_per_cpd[trans_per_cpd != 6].index
-    filtered_chrom_df = []
-    for label_idx in label_idx_to_chk:
-        sub_df = chrom_df.loc[label_idx, :]
-        m = sub_df['is_heavy'] == True
-        cleavage_index = np.intersect1d(sub_df.loc[m, 'cleavage_index'], sub_df.loc[~m, 'cleavage_index'])
-        m = np.in1d(sub_df['cleavage_index'], cleavage_index)
-        filtered_chrom_df.append(sub_df[m])
-
-    chrom_df = chrom_df.drop(axis=0, index=label_idx_to_chk)
-    chrom_df = pd.concat([chrom_df]+ filtered_chrom_df)
-
-    trans_per_cpd = chrom_df.groupby(['label_idx'])['chrom_idx'].count()
-    assert (trans_per_cpd != 6).sum() == 0
-
-    # exclude missing mass-spec data 
-    label_df = label_df.loc[chrom_df.index.unique(), :]
-
-    # label = 1 if quantifiable, otherwise 0
-    label_df['manual_quality'] = label_df['manual_ratio'].notnull().astype(np.int64)
-
-    good_trans_cnt = label_df['manual_frag_quality_t1'].astype(np.int64) + \
-                        label_df['manual_frag_quality_t2'].astype(np.int64) + \
-                        label_df['manual_frag_quality_t3'].astype(np.int64)
-    m = (good_trans_cnt != 2) & (label_df['manual_quality'] == 1)
-
-    # Quantifiable 경우에 selection 을 하지 않은 경우 모든 transition의 quality는 
-    # good으로 간주되어야함
-    label_df.loc[m, 'manual_frag_quality_t1'] = True
-    label_df.loc[m, 'manual_frag_quality_t2'] = True
-    label_df.loc[m, 'manual_frag_quality_t3'] = True
-
-    return label_df, chrom_df
-
 

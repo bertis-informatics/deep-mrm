@@ -27,6 +27,7 @@ class MRMDataset(BaseDataset):
         self.transition_data = transition_data
         self.file_path = file_path
         self._ms_reader = None
+        self._chrom_meta_df = None
         self.chrom_index_map = None
 
     @property
@@ -35,6 +36,12 @@ class MRMDataset(BaseDataset):
             in_memory = type(self) == MRMDataset
             self._ms_reader = MassSpecDataReaderFactory.get_mass_spec_reader(self.file_path, in_memory=in_memory)
         return self._ms_reader
+    
+    @property
+    def chrom_meta_df(self):
+        if self._chrom_meta_df is None:
+            self._chrom_meta_df = self.get_chrom_meta_df()
+        return self._chrom_meta_df
 
     @property
     def peptide_id_col(self):
@@ -60,16 +67,8 @@ class MRMDataset(BaseDataset):
             raise ValueError(f'Cannot find chromatogram for ({q1}, {q3}) transition')
 
         return int(chrom_idx)        
-
-
-    def extract_data(self, tolerance, filter_by_rt=False):
-        # self.isolation_wins = [
-        #         (chrom.get_isolation_window(q=1), chrom.get_isolation_window(q=3))
-        #             for chrom in self.ms_reader.read_chromatograms()]
-        
-        # self.chrom_meta_df = pd.DataFrame(
-        #                         [(wins[0].mz, wins[1].mz) for wins in self.isolation_wins],
-        #                         columns=['precursor_mz', 'product_mz'])
+    
+    def get_chrom_meta_df(self):
         chrom_list = []
         for chrom in self.ms_reader.read_chromatograms():
             precursor_win = chrom.get_isolation_window(q=1)
@@ -79,9 +78,11 @@ class MRMDataset(BaseDataset):
             max_rt = peaks[-1].retention_time
             chrom_list.append([precursor_win.mz, product_win.mz, min_rt, max_rt])
         
-        self.chrom_meta_df = pd.DataFrame(chrom_list, 
-                                columns=['precursor_mz', 'product_mz', 'min_rt', 'max_rt'])
+        return pd.DataFrame(chrom_list, columns=['precursor_mz', 'product_mz', 'min_rt', 'max_rt'])
 
+
+    def extract_data(self, tolerance, filter_by_rt=False):
+        
         self.chrom_index_map = dict()
         precursor_mz_col = self.transition_data.precursor_mz_col
         product_mz_col = self.transition_data.product_mz_col
@@ -110,12 +111,11 @@ class MRMDataset(BaseDataset):
                     map_ret.append((LIGHT_PEPTIDE_KEY, idx, light_chrom_idx))
                     map_ret.append((HEAVY_PEPTIDE_KEY, idx, heavy_chrom_idx))
                 except:
-                    pass      
+                    pass
             
-            n = heavy_df.shape[0]
             m = int(len(map_ret)*0.5)
-            if m != n:
-                logger.warning(f'Can find only {m} XICs out of {n} fragements specified for {pep_id}')
+            if m != num_transitions:
+                logger.warning(f'Can find only {m} XICs out of {num_transitions} fragments specified for {pep_id}')
 
             
             if len(map_ret) > 0:
@@ -133,8 +133,8 @@ class MRMDataset(BaseDataset):
 
         for key, idx, chrom_idx in chrom_map:
             chrom_peaks = self.ms_reader.read_chromatogram(chrom_idx).get_peaks()
-            x = [pk.retention_time for pk in chrom_peaks]
-            y = [pk.intensity for pk in chrom_peaks]
+            x = np.array([pk.retention_time for pk in chrom_peaks], dtype=np.float32)
+            y = np.array([pk.intensity for pk in chrom_peaks], dtype=np.float32)
             xics[key].append((x, y))
 
         sample[XIC_KEY] = xics

@@ -56,12 +56,12 @@ def run_train(
     backbone='resnet34',
     num_anchors=1):
 
-    label_df, pdac_chrom_df, scl_chrom_df = get_metadata_df(use_scl=use_scl)
+    label_df, pdac_xic, scl_xic = get_metadata_df(use_scl=use_scl)
 
     ds = DeepMrmDataset(
                 label_df, 
-                pdac_chrom_df,
-                scl_chrom_df,
+                pdac_xic,
+                scl_xic,
                 transform=transform)
 
     obj_detection_collate_fn = SelectiveCollation(exclusion_keys=[TARGET_KEY, TIME_KEY, XIC_KEY])
