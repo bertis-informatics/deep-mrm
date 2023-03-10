@@ -23,7 +23,7 @@ class DeepMrmModel(torch.nn.Module):
 
     def __init__(self, 
                  name, task, num_anchors=1, returned_layers=[2, 3, 4], 
-                 backbone='resnet34', change_conv1=True):
+                 backbone='resnet34'):
         super().__init__()
         self.name = name
         self.task = task
@@ -39,11 +39,11 @@ class DeepMrmModel(torch.nn.Module):
         self.backbone_name = backbone
 
         if backbone == 'resnet18':
-            backbone = ResNet1x3([2, 2, 2, 2], block=BasicBlock1x3, change_conv1=change_conv1)
+            backbone = ResNet1x3([2, 2, 2, 2], block=BasicBlock1x3)
         elif backbone == 'resnet34':
-            backbone = ResNet1x3([3, 4, 6, 3], block=BasicBlock1x3, change_conv1=change_conv1)
+            backbone = ResNet1x3([3, 4, 6, 3], block=BasicBlock1x3)
         elif backbone == 'resnet50':
-            backbone = ResNet1x3([3, 4, 6, 3], block=Bottleneck1x3, change_conv1=change_conv1)
+            backbone = ResNet1x3([3, 4, 6, 3], block=Bottleneck1x3)
             
         backbone = _resnet_fpn_extractor(backbone, 
                         trainable_layers=5, 

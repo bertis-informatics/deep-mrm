@@ -26,6 +26,7 @@ logger = get_logger('DeepMRM')
 num_workers = 4
 gpu_index = 0
 cycle_time = 0.5
+RANDOM_SEED = 2022
 
 task = ObjectDetectionTask('peak_detect', box_dim=1, num_classes=2)
 
@@ -50,20 +51,22 @@ def run_train(
     returned_layers=[3, 4], 
     batch_size = 512, 
     num_epochs = 100,
-    change_conv1=True,
     split_ratio=(.8, .1, .1),
     use_scl=False,
     backbone='resnet34',
     num_anchors=1):
 
+    logger.info(f'Start loading dataset')
     label_df, pdac_xic, scl_xic = get_metadata_df(use_scl=use_scl)
+    logger.info(f'Complete loading dataset')
 
     ds = DeepMrmDataset(
-                label_df, 
+                label_df,
                 pdac_xic,
                 scl_xic,
                 transform=transform)
-
+    
+    logger.info(f'The size of training-set: {len(ds)}')
     obj_detection_collate_fn = SelectiveCollation(exclusion_keys=[TARGET_KEY, TIME_KEY, XIC_KEY])
 
     data_mgr = DataManager(
@@ -72,7 +75,7 @@ def run_train(
                 num_workers=num_workers, 
                 collate_fn=obj_detection_collate_fn, 
                 split_ratio=split_ratio,
-                random_seed=2022)
+                random_seed=RANDOM_SEED)
 
     data_mgr.split()
 
@@ -89,8 +92,7 @@ def run_train(
     model = DeepMrmModel(
                 model_name, task, num_anchors=num_anchors, 
                 returned_layers=returned_layers,
-                backbone=backbone,
-                change_conv1=change_conv1)
+                backbone=backbone)
     
     optimizer = torch.optim.Adam(model.parameters())
     scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
@@ -102,39 +104,39 @@ def run_train(
 if __name__ == "__main__":
     
     run_train(
-        "ResNet34_Aug", 
+        "ResNet34_Aug_1x", 
         augmentation=True, 
         backbone='resnet34',
-    )    
+    )
 
-    run_train(
-        "ResNet18_Aug", 
-        augmentation=True, 
-        backbone='resnet18'
-    )
+    # run_train(
+    #     "ResNet18_Aug", 
+    #     augmentation=True, 
+    #     backbone='resnet18'
+    # )
     
-    run_train(
-        "ResNet50_Aug", 
-        augmentation=True, 
-        backbone='resnet50',
-    )        
+    # run_train(
+    #     "ResNet50_Aug", 
+    #     augmentation=True, 
+    #     backbone='resnet50',
+    # )        
     
-    run_train(
-        "ResNet34_Aug_NoGrpConv", 
-        augmentation=True, 
-        change_conv1=False,
-    )
+    # run_train(
+    #     "ResNet34_Aug_NoGrpConv", 
+    #     augmentation=True, 
+    #     change_conv1=False,
+    # )
     
-    run_train(
-        "ResNet34_NoAug_NoGrpConv", 
-        augmentation=False, 
-        change_conv1=False,
-    )    
+    # run_train(
+    #     "ResNet34_NoAug_NoGrpConv", 
+    #     augmentation=False, 
+    #     change_conv1=False,
+    # )    
 
-    run_train(
-        "ResNet34_NoAug", 
-        augmentation=False, 
-    )
+    # run_train(
+    #     "ResNet34_NoAug", 
+    #     augmentation=False, 
+    # )
 
     # run_train(
     #     "DeepMRM_Model_SCL", 

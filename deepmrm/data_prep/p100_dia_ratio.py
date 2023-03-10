@@ -5,7 +5,7 @@ import joblib
 import torch
 from torchvision import transforms as T
 
-from deepmrm import data_dir
+from deepmrm import data_dir, private_data_dir
 from deepmrm.data_prep import p100_dia
 from deepmrm.data.transition import TransitionData
 from deepmrm.transform.make_input import MakeInput
@@ -95,7 +95,7 @@ def compute_manual_ratio(label_type):
             auc_results.append(ret)
     ratio_df = pd.DataFrame(auc_results)
     return ratio_df
-    #ratio_df.to_csv(data_dir / 'p100_dia_ratio.csv', index=False)
+
 
 def compute_area_ratio():
     df1 = compute_manual_ratio('Manual')
@@ -105,5 +105,5 @@ def compute_area_ratio():
     df.to_csv(data_dir / 'p100_dia_ratio.csv', index=False)
 
 def get_manual_ratio_df():
-    df = pd.read_csv(data_dir / 'p100_dia_ratio.csv')
+    df = pd.read_csv(private_data_dir / 'p100_dia_ratio.csv')
     return df

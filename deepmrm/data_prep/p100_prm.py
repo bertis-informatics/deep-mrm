@@ -8,7 +8,7 @@ import numpy as np
 from deepmrm import get_yaml_config
 from deepmrm.constant import RT_KEY
 from deepmrm.utils.skyline_parser import parse_skyline_file
-from pyopenms import OnDiscMSExperiment, AASequence
+from pyopenms import AASequence
 
 from mstorch.utils.logger import get_logger
 

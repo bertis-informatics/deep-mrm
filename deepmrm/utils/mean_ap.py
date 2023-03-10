@@ -1,7 +1,6 @@
 from torchmetrics.detection.mean_ap import MeanAveragePrecision, MAPMetricResults, MARMetricResults
-from typing import Any, Dict, List, Optional, Sequence, Tuple
-import torch
-from torch import IntTensor, Tensor
+from typing import Any, Dict, List, Optional, Tuple
+from torch import Tensor
 
 
 class MeanAveragePrecisionRecall(MeanAveragePrecision):
@@ -9,6 +8,7 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
     def __init__(
         self,
         box_format: str = "xyxy",
+        iou_type: str = "bbox",
         iou_thresholds: Optional[List[float]] = None,
         rec_thresholds: Optional[List[float]] = None,
         max_detection_thresholds: Optional[List[int]] = None,
@@ -16,10 +16,15 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
         compute_on_step: Optional[bool] = None,
         **kwargs: Dict[str, Any],
     ) -> None:  # type: ignore
-        super().__init__(box_format, 
-                        iou_thresholds, rec_thresholds, 
-                        max_detection_thresholds, class_metrics,
-                        compute_on_step, **kwargs)
+        super().__init__(
+                        box_format = box_format,
+                        iou_type = iou_type,
+                        iou_thresholds=iou_thresholds, 
+                        rec_thresholds=rec_thresholds, 
+                        max_detection_thresholds=max_detection_thresholds, 
+                        class_metrics=class_metrics,
+                        compute_on_step=compute_on_step, 
+                        **kwargs)
         self.bbox_area_ranges = {
             "all": (0**2, int(1e5**2)),
         }

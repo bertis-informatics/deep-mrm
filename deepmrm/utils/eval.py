@@ -123,7 +123,6 @@ def calculate_area_ratio(test_ds, output_df,
     """
 
     auc_results = dict()
-    is_pdac = 'manual_quality' in output_df.columns
 
     for idx, row in enumerate(output_df.iterrows()):
         
@@ -139,6 +138,8 @@ def calculate_area_ratio(test_ds, output_df,
         rt = sample[RT_KEY]
         st, ed = row['start_index'], row['end_index']
         st_time, ed_time = row['start_time'], row['end_time']
+        
+        is_pdac = 'replicate_id' in sample and sample['replicate_id'] > 0
 
         pred_boxes = row['boxes'].copy()
         pred_scores = row['scores'].copy()
@@ -220,11 +221,12 @@ def calculate_area_ratio(test_ds, output_df,
 def compute_peak_detection_performance(test_ds, output_df, 
                     iou_thresholds=[0.3, 0.5], 
                     max_detection_thresholds=[1, 3],
-                    score_th=0.1):
+                    score_th=0.05):
 
     output_df = create_result_table(test_ds, output_df)
     for iou_th in iou_thresholds:
         for max_det in max_detection_thresholds:
+
             quant_df = calculate_area_ratio(
                             test_ds, 
                             output_df, 

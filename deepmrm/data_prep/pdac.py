@@ -86,11 +86,16 @@ def get_transition_df():
             'Ret Time (min)': 'rt',
             'Precursor Charge': 'precursor_charge'
         }
-
         tran_df = tran_df[list(cols_rename)].rename(columns=cols_rename)
         tran_df.to_csv(save_path, index=False)
     else:
         tran_df = pd.read_csv(save_path)
+
+    # this is critical because transition labels are arranged by cleavage index
+    tran_df = tran_df.sort_values([
+                    'peptide_id', 'is_heavy', 
+                    'precursor_mz', 'product_mz'
+                ], ascending=True).reset_index(drop=True)
 
     return tran_df
 
@@ -160,6 +165,9 @@ def _extract_manual_data(df, sheet):
         manual_ratio_desc = df.iloc[i, ratio_index+1]
         heavy_pmol = df.iloc[i, ratio_index+2]
         light_pmol = df.iloc[i, ratio_index+3]
+
+        if not (pd.isna(manual_ratio) or np.any(trans_quality)):
+            trans_quality = [True] * len(trans_quality)
         
         record = [
             peptide_code, selected_charge, 
@@ -198,6 +206,7 @@ def _create_label_df():
         # fname = PDAC_SIT_MANUAL_DIR / 'PDAC273_Sub6_spiked_ratio_rep1-3_outliertest_20211020.xlsx'
         print(fname.name)
         patient_id = int(fname.name[4:7])
+
         
         wb = load_workbook(fname)
         sheet_names = wb.sheetnames
@@ -231,7 +240,18 @@ def get_label_df():
         #     (label_df['peptide_code'] == 'PDAC0168')
         # idx = label_df.index[m][0]        
         # label_df.loc[idx, 'manual_ratio_desc'] = 'y ion transition 순서 불일치'
+        
+        # s = label_df['manual_frag_quality_t1'] + label_df['manual_frag_quality_t2'] + label_df['manual_frag_quality_t3']
+        # m = (s == 0) & (label_df['manual_ratio'].notnull())
+        # label_df.loc[m, 'manual_frag_quality_t1'] = True
+        # label_df.loc[m, 'manual_frag_quality_t2'] = True
+        # label_df.loc[m, 'manual_frag_quality_t3'] = True
         label_df.to_csv(fpath, index=False)
+
+    # overwrite incorrect labels
+    m = label_df['manual_ratio'].isnull()
+    for k in range(3):
+        label_df.loc[m, f'manual_frag_quality_t{k+1}'] = False
 
     ms_df = get_msdata_df()
     label_df = label_df.merge(ms_df, 
@@ -242,7 +262,6 @@ def get_label_df():
     label_df.index.name = 'label_idx'
 
     return label_df
-
 
 def _create_chrom_df():
     # save_path = private_data_dir / 'PDAC_SIT_chrom.pkl'
@@ -411,4 +430,6 @@ def get_metadata_df():
     label_df['manual_quality'] = label_df['manual_ratio'].notnull().astype(np.int64)
 
     return label_df, xic_data
+
+
 

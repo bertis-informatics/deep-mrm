@@ -26,12 +26,6 @@ SKY_FILES = {
     }
 
 
-
-
-
-
-
-
 def get_spectral_lib_df():
     spec_lib_path = SKY_DIR / 'Manual/SV_P100_DIA_CE30_PurePeptides.blib'
     con = sqlite3.connect(spec_lib_path)
@@ -261,8 +255,7 @@ from deepmrm.data.dataset.prm import PRMDataset
 from multiprocessing import Pool
 from deepmrm.data_prep import p100_dia
 
-all_trans_df = get_transition_df()
-transition_data = TransitionData(all_trans_df, rt_col='ref_rt')
+transition_data = None
 
 def extract_xic(mzml_fname):
     rt_window_size = 20*60
@@ -281,6 +274,12 @@ def extract_xic(mzml_fname):
 
 
 def run_batch_xic_extraction(n_jobs=8):
+    global transition_data
+    all_trans_df = get_transition_df()
+    transition_data = TransitionData(all_trans_df, 
+                                 peptide_id_col='modified_sequence',
+                                 rt_col='ref_rt')
+
     mzml_files = sorted(list(MZML_DIR.rglob('*.mzML')))
     with Pool(n_jobs) as p:
         p.map(extract_xic, mzml_files)

@@ -42,7 +42,9 @@ peptide_id_col = 'modified_sequence'
 iou_thresholds = [0.3]
 max_detection_thresholds = [1, 3]
 mz_tol = Tolerance(20, ToleranceUnit.PPM)
-transition_data = TransitionData(all_trans_df, rt_col='ref_rt')
+transition_data = TransitionData(all_trans_df, 
+                                 peptide_id_col='modified_sequence',
+                                 rt_col='ref_rt')
 # sample_df = sample_df[sample_df['sample_id'] != 'CC20160706_P100_Plate34_PC3_T3_P-0034_E11_acq_01']
 
 

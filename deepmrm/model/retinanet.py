@@ -166,7 +166,7 @@ class RetinaNet(nn.Module):
         self,
         backbone,
         anchor_generator,
-        num_classes=3,
+        num_classes=2,
         score_thresh=0.05,
         nms_thresh=0.5,
         detections_per_img=10,

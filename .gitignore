@@ -135,5 +135,7 @@ dmypy.json
 /models/*
 !/models/DeepMRM_Model.pth
 
+/temp
+
 # visual studio workspace settings
 *.code-workspace

@@ -62,10 +62,14 @@ class BatchXics(torch.nn.Module):
                     batched_xics[i, :, j, :xic_tensor.shape[2]].copy_(xic_tensor[:, 0, :])
 
         if targets is not None:
-            targets = [
-                {k: torch.from_numpy(v).to(device) for k, v in target.items()}
-                    for target in targets
-            ]
+            if isinstance(targets, dict):
+                targets = [
+                    {k: torch.from_numpy(v).to(device) for k, v in target.items()}
+                        for target in targets
+                ]
+            else:
+                targets = targets.to(device)
+                
             return batched_xics, targets
 
         return batched_xics
