@@ -2,7 +2,6 @@ import torch
 
 from torchvision import transforms as T
 from torch.optim.lr_scheduler import StepLR
-#from torchmetrics.classification.accuracy import Bin
 from torchmetrics.classification import BinaryAccuracy
 
 from mstorch.data.manager import DataManager
@@ -15,16 +14,12 @@ from deepmrm import model_dir
 from deepmrm.constant import XIC_KEY, TIME_KEY
 from deepmrm.data.dataset import DeepMrmDataset
 from deepmrm.data_prep import get_metadata_df
-from deepmrm.model.quant import PeakQualityEstimator
-from deepmrm.model.resnet import BasicBlock1x3, Bottleneck1x3
+from deepmrm.model.quality_score import QualityScorer
 from deepmrm.transform.make_input import MakeInput
 from deepmrm.transform.make_target import MakePeakQualityTarget
 from deepmrm.train.trainer import BaseTrainer
-from deepmrm.transform.augment import (
-    TransitionShuffle, 
-    RandomResizedCrop,
-    TransitionJitter
-)
+from deepmrm.transform.augment import RandomResizedCrop, TransitionJitter
+
 
 logger = get_logger('DeepMRM')
 num_workers = 4
@@ -46,67 +41,60 @@ transform = T.Compose([
 
 aug_transform = T.Compose([
         MakeInput(force_resampling=True, use_rt=False, cycle_time=cycle_time),
-        TransitionShuffle(p=0.5),
         TransitionJitter(p=0.25),
         RandomResizedCrop(p=0.7, cycle_time=cycle_time),
         MakePeakQualityTarget()
     ])
 
+if __name__ == "__main__":
+    model_name = 'DeepMRM_QS'
+    augmentation = True
+    batch_size = 512 
+    num_epochs = 100
+    split_ratio=(.8, .1, .1)
 
-model_name = 'DeepMRM_PQ'
-augmentation = True
-batch_size = 512 
-num_epochs = 100
-split_ratio=(.8, .1, .1)
+    logger.info(f'Start loading dataset')
+    label_df, pdac_xic, scl_xic = get_metadata_df(
+                                        only_quantifiable_peak=False, 
+                                        use_scl=False)
+    logger.info(f'Complete loading dataset')
 
-logger.info(f'Start loading dataset')
-label_df, pdac_xic, scl_xic = get_metadata_df(
-                                    only_quantifiable_peak=False, 
-                                    use_scl=False)
-logger.info(f'Complete loading dataset')
+    ds = DeepMrmDataset(
+                label_df, 
+                pdac_xic,
+                scl_xic,
+                transform=transform)
 
-ds = DeepMrmDataset(
-            label_df, 
-            pdac_xic,
-            scl_xic,
-            transform=transform)
+    logger.info(f'The size of training-set: {len(ds)}')
+    obj_detection_collate_fn = SelectiveCollation(exclusion_keys=[TIME_KEY, XIC_KEY])
 
-logger.info(f'The size of training-set: {len(ds)}')
-obj_detection_collate_fn = SelectiveCollation(
-                                exclusion_keys=[TIME_KEY, XIC_KEY]
-                            )
+    data_mgr = DataManager(
+                task, 
+                ds, 
+                num_workers=num_workers, 
+                collate_fn=obj_detection_collate_fn, 
+                split_ratio=split_ratio,
+                random_seed=RANDOM_SEED)
+    data_mgr.split()
 
-data_mgr = DataManager(
-            task, 
-            ds, 
-            num_workers=num_workers, 
-            collate_fn=obj_detection_collate_fn, 
-            split_ratio=split_ratio,
-            random_seed=RANDOM_SEED)
+    if augmentation:
+        data_mgr.set_transform(aug_transform, partition_type=PartitionType.TRAIN)
 
-data_mgr.split()
+    trainer = BaseTrainer(data_mgr, 
+                        model_dir, 
+                        logger, 
+                        run_copy_to_device=False, 
+                        gpu_index=gpu_index)
 
-if augmentation:
-    data_mgr.set_transform(aug_transform, partition_type=PartitionType.TRAIN)
+    trainer.add_metrics(task, BinaryAccuracy())
+    model = QualityScorer(model_name, task)
 
+    optimizer = torch.optim.Adam(model.parameters())
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
+    trainer = trainer.set_model(model).set_optimizer(optimizer).set_scheduler(scheduler)
 
-
-trainer = BaseTrainer(data_mgr, 
-                    model_dir, 
-                    logger, 
-                    run_copy_to_device=False, 
-                    gpu_index=gpu_index)
-
-trainer.add_metrics(task, BinaryAccuracy())
-# BasicBlock1x3, Bottleneck1x3
-model = PeakQualityEstimator(model_name, task)
-
-optimizer = torch.optim.Adam(model.parameters())
-scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
-trainer = trainer.set_model(model).set_optimizer(optimizer).set_scheduler(scheduler)
-
-## 6. start training
-trainer.train(num_epochs=num_epochs, batch_size=batch_size)
+    ## 6. start training
+    trainer.train(num_epochs=num_epochs, batch_size=batch_size)
 
 
 # testset_loader = data_mgr.get_dataloader('test')

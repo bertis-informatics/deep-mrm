@@ -14,10 +14,9 @@ from deepmrm.data_prep import get_metadata_df, pdac, scl
 from deepmrm.data.dataset import DeepMrmDataset
 from torchvision import transforms as T
 from deepmrm.transform.make_input import MakeInput
-from deepmrm.train.run import RANDOM_SEED
+from deepmrm.train.train_boundary_detector import RANDOM_SEED
 
-#from torchvision.models.detection.transform import GeneralizedRCNNTransform
-from deepmrm.train.run import task, transform
+from deepmrm.train.train_boundary_detector import task, transform
 from deepmrm.utils.eval import compute_peak_detection_performance
 import joblib
 

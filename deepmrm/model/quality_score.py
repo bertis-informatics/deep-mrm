@@ -8,16 +8,17 @@ from itertools import combinations
 from mstorch.utils.cuda_memory import recursive_copy_to_device
 from deepmrm.constant import TARGET_KEY, XIC_KEY
 from deepmrm.transform.batch_xic import BatchXics
-from deepmrm.model.resnet import ResNet1x3, BasicBlock1x3, Bottleneck1x3
+from deepmrm.model.resnet import ResNet1x3, BasicBlock1x3
 
 
-class PeakQualityEstimator(ResNet1x3):
+
+class QualityScorer(ResNet1x3):
     def __init__(self,
                  name,
                  task,
-                 block=BasicBlock1x3,
-                 ):
-        super(PeakQualityEstimator, self).__init__(
+                 block=BasicBlock1x3):
+        
+        super(QualityScorer, self).__init__(
             layers=[1, 1, 1, 1],
             block=block,
             inplanes=64, 
@@ -72,6 +73,11 @@ class PeakQualityEstimator(ResNet1x3):
     
     def predict(self, xic_array, peak_boundary, max_candidates=6):
         
+        num_transitions = xic_array.shape[1]
+        if num_transitions < 2:
+            # there is only one transition. Can't scoring it
+            return {idx: 0 for idx in range(num_transitions)}
+
         st_idx, ed_idx = np.around(peak_boundary).astype(int)
         ct_idx = int( np.median(xic_array[1, :, st_idx:ed_idx].argmax(axis=1)) ) + st_idx
         trans_indexes = xic_array[1, :, ct_idx].argsort()[::-1][:max_candidates]

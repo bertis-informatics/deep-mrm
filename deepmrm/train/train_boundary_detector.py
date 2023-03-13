@@ -13,14 +13,11 @@ from deepmrm import model_dir
 from deepmrm.constant import XIC_KEY, TIME_KEY, TARGET_KEY
 from deepmrm.data.dataset import DeepMrmDataset
 from deepmrm.data_prep import get_metadata_df
-from deepmrm.model.model import DeepMrmModel
+from deepmrm.model.boundary_detect import BoundaryDetector
 from deepmrm.transform.make_input import MakeTagets, MakeInput
 from deepmrm.train.trainer import BaseTrainer
-from deepmrm.transform.augment import (
-    TransitionShuffle, 
-    RandomResizedCrop,
-    TransitionJitter
-)
+from deepmrm.transform.augment import RandomResizedCrop, TransitionJitter
+
 
 logger = get_logger('DeepMRM')
 num_workers = 4
@@ -38,7 +35,6 @@ transform = T.Compose([
 
 aug_transform = T.Compose([
         MakeInput(force_resampling=True, use_rt=False, cycle_time=cycle_time),
-        TransitionShuffle(p=0.5),
         TransitionJitter(p=0.25),
         RandomResizedCrop(p=0.7, cycle_time=cycle_time),
         MakeTagets()
@@ -87,9 +83,8 @@ def run_train(
                         logger, 
                         run_copy_to_device=False, 
                         gpu_index=gpu_index)
-    
 
-    model = DeepMrmModel(
+    model = BoundaryDetector(
                 model_name, task, num_anchors=num_anchors, 
                 returned_layers=returned_layers,
                 backbone=backbone)
@@ -98,48 +93,17 @@ def run_train(
     scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
     trainer = trainer.set_model(model).set_optimizer(optimizer).set_scheduler(scheduler)
 
-    ## 6. start training
+    ## start training
     trainer.train(num_epochs=num_epochs, batch_size=batch_size)
+
+
 
 if __name__ == "__main__":
     
-    run_train(
-        "ResNet34_Aug_1x", 
-        augmentation=True, 
-        backbone='resnet34',
-    )
+    run_train("DeepMRM_BD", backbone='resnet18', augmentation=True)
 
     # run_train(
-    #     "ResNet18_Aug", 
-    #     augmentation=True, 
-    #     backbone='resnet18'
-    # )
-    
-    # run_train(
-    #     "ResNet50_Aug", 
-    #     augmentation=True, 
-    #     backbone='resnet50',
-    # )        
-    
-    # run_train(
-    #     "ResNet34_Aug_NoGrpConv", 
-    #     augmentation=True, 
-    #     change_conv1=False,
-    # )
-    
-    # run_train(
-    #     "ResNet34_NoAug_NoGrpConv", 
-    #     augmentation=False, 
-    #     change_conv1=False,
-    # )    
-
-    # run_train(
-    #     "ResNet34_NoAug", 
-    #     augmentation=False, 
-    # )
-
-    # run_train(
-    #     "DeepMRM_Model_SCL", 
+    #     "DeepMRM_Model_SCL",
     #     use_scl=True, 
     #     augmentation=True, 
     #     backbone='resnet34',

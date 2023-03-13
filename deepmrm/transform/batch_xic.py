@@ -6,7 +6,7 @@ import numpy as np
 
 class BatchXics(torch.nn.Module):
 
-    def __init__(self, min_transitions=3, size_divisible=32):
+    def __init__(self, min_transitions=1, size_divisible=32):
         super().__init__()
         self.min_transitions = min_transitions
         self.size_divisible = size_divisible

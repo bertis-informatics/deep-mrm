@@ -19,7 +19,7 @@ class DummyExtraFPNBlock(ExtraFPNBlock):
         return results, names
 
 
-class DeepMrmModel(torch.nn.Module):
+class BoundaryDetector(torch.nn.Module):
 
     def __init__(self, 
                  name, task, num_anchors=1, returned_layers=[2, 3, 4], 
@@ -70,7 +70,7 @@ class DeepMrmModel(torch.nn.Module):
         # correspond to the number of feature maps.
         anchor_generator = BoundaryAnchorGenerator(anchor_sizes)
         self.detector = RetinaNet(backbone, anchor_generator, num_classes=num_classes, num_conv_layers_in_head=3)
-        self.batch_xics = BatchXics(min_transitions=3)
+        self.batch_xics = BatchXics(min_transitions=1)
         
     def set_transform(self, transform):
         """

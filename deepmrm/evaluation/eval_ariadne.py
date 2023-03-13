@@ -16,7 +16,7 @@ from deepmrm.data.transition import TransitionData
 from deepmrm.data import obj_detection_collate_fn
 from deepmrm.data_prep import ariadne
 from deepmrm.transform.make_input import MakeInput, TransitionDuplicate
-from deepmrm.train.run import task, transform
+from deepmrm.train.train_boundary_detector import task, transform
 from deepmrm.predict.interface import create_prediction_results
 from mstorch.data.mass_spec.tolerance import Tolerance, ToleranceUnit
 from deepmrm.data_prep.ariadne import get_mzml_files, get_trans_df, get_skyline_result_df
