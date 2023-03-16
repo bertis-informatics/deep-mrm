@@ -17,15 +17,21 @@ SCL_DIR = Path(conf['ROOT_DIR'])
 SCL_MZML_DIR = Path(conf['MZML_DIR'])
 
 
-
 def get_transition_df():
     trans_df = pd.read_csv(private_data_dir/'SCL_transition.csv')
     return trans_df
 
 
 def get_label_df():
+    
     label_df = pd.read_csv(private_data_dir / 'SCL_label.csv')
+    label_df['replicate_id'] = 0
+    label_df['manual_peak_quality'] = [np.ones(1, dtype=np.int32)]*label_df.shape[0]
+    for col in label_df.select_dtypes(include=[np.object_]).columns.difference(['manual_peak_quality']):
+        label_df[col] = label_df[col].astype(str)
+
     return label_df
+
 
 def _create_chrom_df():
 
@@ -63,7 +69,6 @@ def get_metadata_df():
     label_df = get_label_df()
 
     return label_df, xic_data 
-
 
 
 def _read_scl_data(excel_path):

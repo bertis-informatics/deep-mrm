@@ -70,11 +70,8 @@ def remove_wrong_labels(replicate_df, peak_df):
 
 
 def get_metadata_df():
-    # trans_df = get_transition_df()
+    
     replicate_df, peak_df, trans_df = load_skyline_data()
-
-    # m = trans_df['modified_sequence'] == 'GVNFDVSK'
-    # trans_df[m]
 
     # mzML file name is not matched with those in skyline
     replace_mzml = {}
@@ -99,6 +96,7 @@ def get_metadata_df():
     for col in ['start_time', RT_KEY, 'end_time']:
         meta_df[col] = meta_df[col].astype(np.float32)*60
 
+    meta_df['manual_quality'] = 1
     meta_df = meta_df.reset_index(drop=True)
     
     return meta_df, trans_df

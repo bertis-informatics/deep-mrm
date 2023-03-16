@@ -1,4 +1,4 @@
-# packages for cpu-only, window version 
+# packages for cpu-only
 torch>=1.11
 torchvision>=0.12
 openpyxl

@@ -1,4 +1,5 @@
 import math
+import collections
 import torch.nn
 from torchvision import transforms as T
 import numpy as np
@@ -62,7 +63,7 @@ class BatchXics(torch.nn.Module):
                     batched_xics[i, :, j, :xic_tensor.shape[2]].copy_(xic_tensor[:, 0, :])
 
         if targets is not None:
-            if isinstance(targets, dict):
+            if isinstance(targets, collections.abc.Sequence):
                 targets = [
                     {k: torch.from_numpy(v).to(device) for k, v in target.items()}
                         for target in targets

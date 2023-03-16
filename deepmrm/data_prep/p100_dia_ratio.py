@@ -11,7 +11,7 @@ from deepmrm.data.transition import TransitionData
 from deepmrm.transform.make_input import MakeInput
 from deepmrm.data.dataset import PRMDataset
 from deepmrm.constant import RT_KEY, XIC_KEY, TIME_KEY, TARGET_KEY
-from deepmrm.utils.peak import calculate_peak_area_with_time, calculate_peak_area_with_index
+from deepmrm.utils.peak import calculate_peak_area_with_time
 
 
 def get_quantitative_transition_df(label_type):

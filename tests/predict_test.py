@@ -1,5 +1,4 @@
 import pandas as pd
-from pathlib import Path
 
 from mstorch.data.mass_spec.tolerance import Tolerance, ToleranceUnit
 from deepmrm.data.transition import TransitionData
@@ -11,7 +10,7 @@ from deepmrm import model_dir, project_dir
 
 def test_interface():
     data_dir = project_dir / 'sample_data'
-    model_path = model_dir / 'DeepMRM_Model.pth'
+    # model_path = model_dir / 'DeepMRM_Model.pth'
     transition_path = data_dir / 'sample_target_list.csv'
     ms_path = data_dir / 'sample_mrm_data.mzML'
 
@@ -40,7 +39,7 @@ def test_interface():
             xic_data.add_xic_pair(light_time, light_intensity, heavy_time, heavy_intensity)
         input_ds.add_xic_data(xic_data)
 
-    pred_result = run_deepmrm(model_path, input_ds)
+    pred_result = run_deepmrm(model_dir, input_ds)
 
 
     assert len(pred_result) == len(ds), "#outputs doesn't match to #inputs"

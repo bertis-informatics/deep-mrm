@@ -7,7 +7,6 @@ from torchmetrics.classification import BinaryAccuracy
 from mstorch.data.manager import DataManager
 from mstorch.tasks import ClassificationTask
 from mstorch.utils.logger import get_logger
-from mstorch.utils.data.collate import SelectiveCollation
 from mstorch.enums import PartitionType
 
 from deepmrm import model_dir
@@ -19,35 +18,34 @@ from deepmrm.transform.make_input import MakeInput
 from deepmrm.transform.make_target import MakePeakQualityTarget
 from deepmrm.train.trainer import BaseTrainer
 from deepmrm.transform.augment import RandomResizedCrop, TransitionJitter
-
+from deepmrm.data import obj_detection_collate_fn
 
 logger = get_logger('DeepMRM')
 num_workers = 4
 gpu_index = 0
-cycle_time = 0.5
 RANDOM_SEED = 2022
 
 # task = ObjectDetectionTask('peak_detect', box_dim=1, num_classes=2)
 task = ClassificationTask('peak_quality', 
-                            label_column='manual_quality',
-                            prediction_column='predicted_quality',
-                            num_classes=2)
+                           label_column='manual_quality',
+                           prediction_column='predicted_quality',
+                           num_classes=2)
 
 # Define transforms
 transform = T.Compose([
-                MakeInput(force_resampling=True, use_rt=False, cycle_time=cycle_time),
+                MakeInput(force_resampling=True, use_rt=False),
                 MakePeakQualityTarget()
             ])
 
 aug_transform = T.Compose([
-        MakeInput(force_resampling=True, use_rt=False, cycle_time=cycle_time),
+        MakeInput(force_resampling=True, use_rt=False),
         TransitionJitter(p=0.25),
-        RandomResizedCrop(p=0.7, cycle_time=cycle_time),
+        RandomResizedCrop(p=0.7),
         MakePeakQualityTarget()
     ])
 
-if __name__ == "__main__":
-    model_name = 'DeepMRM_QS'
+
+def run_qs_model(model_name, layers):
     augmentation = True
     batch_size = 512 
     num_epochs = 100
@@ -66,7 +64,7 @@ if __name__ == "__main__":
                 transform=transform)
 
     logger.info(f'The size of training-set: {len(ds)}')
-    obj_detection_collate_fn = SelectiveCollation(exclusion_keys=[TIME_KEY, XIC_KEY])
+    
 
     data_mgr = DataManager(
                 task, 
@@ -87,7 +85,8 @@ if __name__ == "__main__":
                         gpu_index=gpu_index)
 
     trainer.add_metrics(task, BinaryAccuracy())
-    model = QualityScorer(model_name, task)
+    
+    model = QualityScorer(model_name, task, layers=layers)
 
     optimizer = torch.optim.Adam(model.parameters())
     scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
@@ -104,13 +103,11 @@ if __name__ == "__main__":
 # m = (ret_df['manual_quality'] == 0) 
 # m &= (ret_df['pred_quality'] == 1)
 
-
 # from sklearn.metrics import accuracy_score
 # from mstorch.evaluation.classification import ClassificationReport
 # import numpy as np
 # from matplotlib import pyplot as plt
 # accuracy_score(ret_df['manual_quality'], ret_df['pred_quality'])
-
 
 # y_prob = np.zeros((ret_df.shape[0], 2))
 # y_prob[:, 1] = ret_df['predicted_quality'].values
@@ -122,7 +119,6 @@ if __name__ == "__main__":
 
 # conf_disp = rpt.get_confusion_matrix_display(1)
 
-
 # conf_disp.plot()
 # plt.savefig('./temp/conf_matrix.jpg')
 
@@ -130,7 +126,6 @@ if __name__ == "__main__":
 # fig, ax = rpt.get_roc_curve(1)
 # plt.savefig('./temp/roc_curve.jpg')
 
-
-
-
-
+if __name__ == "__main__":
+    run_qs_model('DeepMRM_QS', layers=[1, 1, 1, 1])
+    # run_qs_model('DeepMRM_QS_L2', layers=[2, 2, 2, 2])

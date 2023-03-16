@@ -12,7 +12,8 @@ from deepmrm.model.utils import BoundaryAnchorGenerator
 from deepmrm.constant import TARGET_KEY, XIC_KEY
 from deepmrm.transform.batch_xic import BatchXics
 from deepmrm.model.resnet import ResNet1x3, BasicBlock1x3, Bottleneck1x3
-
+from deepmrm.constant import RT_KEY, XIC_KEY, TIME_KEY, TARGET_KEY
+from mstorch.data.dataset import BaseDataset
 
 class DummyExtraFPNBlock(ExtraFPNBlock):
     def forward(self, results, x, names):
@@ -23,7 +24,7 @@ class BoundaryDetector(torch.nn.Module):
 
     def __init__(self, 
                  name, task, num_anchors=1, returned_layers=[2, 3, 4], 
-                 backbone='resnet34'):
+                 backbone='resnet18'):
         super().__init__()
         self.name = name
         self.task = task
@@ -35,10 +36,12 @@ class BoundaryDetector(torch.nn.Module):
         num_classes = task.num_classes
         extra_blocks = LastLevelMaxPool()
 
-        assert backbone in ['resnet18', 'resnet34', 'resnet50']
+        assert backbone in ['resnet18_light', 'resnet18', 'resnet34', 'resnet50']
         self.backbone_name = backbone
 
-        if backbone == 'resnet18':
+        if backbone == 'resnet18_light':
+            backbone = ResNet1x3([1, 1, 1, 1], block=BasicBlock1x3)
+        elif backbone == 'resnet18':
             backbone = ResNet1x3([2, 2, 2, 2], block=BasicBlock1x3)
         elif backbone == 'resnet34':
             backbone = ResNet1x3([3, 4, 6, 3], block=BasicBlock1x3)
@@ -117,7 +120,7 @@ class BoundaryDetector(torch.nn.Module):
         return loss
 
 
-    def evaluate(self, testset_loader):
+    def predict(self, testset_loader):
         """
         Collect model outputs against testset, and 
         make results in tabular format (i.e. pandas.DataFrame)
@@ -135,8 +138,9 @@ class BoundaryDetector(torch.nn.Module):
             if torch.is_tensor(outputs):
                 return outputs.cpu().detach().numpy().tolist()
             return outputs
-
-        index_name = testset_loader.dataset.metadata_index_name
+        
+        test_ds = testset_loader.dataset
+        index_name = test_ds.metadata_index_name
 
         dfs = []
         self.eval()
@@ -153,8 +157,18 @@ class BoundaryDetector(torch.nn.Module):
                 batch_result = {
                     col: convert_to_list(preds_) for col, preds_ in predictions.items()
                 }
-
+                
+                # update with labeled data
+                if TARGET_KEY in batched_samples:
+                    for k in ['boxes', 'labels']:
+                        batch_result[f'target_{k}'] = [
+                            target[k] for target in batched_samples[TARGET_KEY]]
+                
                 dfs.append(pd.DataFrame.from_dict(batch_result))
-
+        
         result_df = pd.concat(dfs).set_index(index_name)
+        if isinstance(test_ds, BaseDataset):
+            # join with metadata_df of input dataset
+            result_df = test_ds.metadata_df.join(result_df)
+
         return result_df

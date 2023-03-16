@@ -100,24 +100,6 @@ def get_transition_df():
     return tran_df
 
 
-# def get_compact_transition_df():
-    
-#     trans_df = get_transition_df()
-#     compact_trans_df = trans_df.drop_duplicates(
-#                         ['Compound Group', 'Compound Name', 'Ret Time (min)'], 
-#                         keep='first')
-#     selected_cols = [
-#         'Compound Group', 'Compound Name', 'Ret Time (min)',
-#         'Sequence', 'Heavy'
-#     ]
-
-#     compact_trans_df =compact_trans_df[selected_cols].reset_index(drop=True)
-#     compact_trans_df.index.name = 'compound_idx'
-
-#     return compact_trans_df
-
-
-
 def _extract_manual_data(df, sheet):
     df = df.replace({'X': np.nan, '-': np.nan})
     headers = [header_col[0] for header_col in df.columns]
@@ -138,22 +120,17 @@ def _extract_manual_data(df, sheet):
         else:
             selected_charge = 0
 
-        trans_quality = [
-            sheet[f'R{4+i+k}'].fill.bgColor.value == 64 
-                for k in range(2, -1, -1)
-        ]
-
-        light_frag_auc = df.iloc[i:i+3, 6].values[::-1]
-        # light_frag_rank = df.iloc[i:i+3, 7].values[::-1]
+        # light_frag_auc = df.iloc[i:i+3, 6].values[::-1]
+        # # light_frag_rank = df.iloc[i:i+3, 7].values[::-1]
         light_frag_rt = df.iloc[i:i+3, 8].values[::-1]
         light_rt = np.nanmean(light_frag_rt)
 
-        heavy_frag_auc = df.iloc[i:i+3, 12].values[::-1]
-        # heavy_frag_rank = df.iloc[i:i+3, 13].values[::-1]
+        # heavy_frag_auc = df.iloc[i:i+3, 12].values[::-1]
+        # # heavy_frag_rank = df.iloc[i:i+3, 13].values[::-1]
         heavy_frag_rt = df.iloc[i:i+3, 14].values[::-1]
         heavy_rt = np.nanmean(heavy_frag_rt)
 
-        manual_frag_ratio = light_frag_auc / heavy_frag_auc
+        # manual_frag_ratio = light_frag_auc / heavy_frag_auc
 
         light_auc = df.iloc[i, 9]
         heavy_auc = df.iloc[i, 15]
@@ -166,20 +143,34 @@ def _extract_manual_data(df, sheet):
         heavy_pmol = df.iloc[i, ratio_index+2]
         light_pmol = df.iloc[i, ratio_index+3]
 
-        if not (pd.isna(manual_ratio) or np.any(trans_quality)):
-            trans_quality = [True] * len(trans_quality)
-        
+        # transition quality is labeled by either cell-color or zero-value
+        trans_quality = [
+            sheet[f'R{4+i+k}'].fill.bgColor.value == 64
+                for k in range(2, -1, -1)
+        ]
+
+        if pd.notna(manual_ratio):
+            if not np.any(trans_quality): # not marked with color
+                trans_quality = [
+                    not (np.isreal(sheet[f'R{4+i+k}'].value) and sheet[f'R{4+i+k}'].value == 0)
+                        for k in range(2, -1, -1)
+                ]
+            if not np.any(trans_quality):
+                trans_quality = [True] * len(trans_quality)
+        elif np.any(trans_quality):
+            trans_quality = [False] * len(trans_quality)
+
         record = [
             peptide_code, selected_charge, 
             light_auc, heavy_auc, ion_order, manual_ratio, 
             manual_ratio_desc, light_pmol, heavy_pmol,
-            light_rt, heavy_rt,
+            light_rt, heavy_rt, trans_quality
         ]
-        record.extend(list(manual_frag_ratio))
-        record.extend(trans_quality)
-        record.extend(list(light_frag_auc))
-        record.extend(list(heavy_frag_auc))
-
+        
+        # record.extend(list(manual_frag_ratio))
+        # record.extend(trans_quality)
+        # record.extend(list(light_frag_auc))
+        # record.extend(list(heavy_frag_auc))
         all_records.append(record)
 
     cols = [
@@ -187,12 +178,12 @@ def _extract_manual_data(df, sheet):
         'light_auc', 'heavy_auc', 'ion_order', 
         'manual_ratio', 'manual_ratio_desc', 
         'light_pmol', 'heavy_pmol', 
-        'light_rt', 'heavy_rt'
+        'light_rt', 'heavy_rt', 'manual_peak_quality'
     ]
-    cols.extend([f'manual_frag_ratio_t{k+1}' for k in range(3)])
-    cols.extend([f'manual_frag_quality_t{k+1}' for k in range(3)])
-    cols.extend([f'manual_light_frag_auc_t{k+1}' for k in range(3)])
-    cols.extend([f'manual_heavy_frag_auc_t{k+1}' for k in range(3)])
+    # cols.extend([f'manual_frag_ratio_t{k+1}' for k in range(3)])
+    # cols.extend([f'manual_frag_quality_t{k+1}' for k in range(3)])
+    # cols.extend([f'manual_light_frag_auc_t{k+1}' for k in range(3)])
+    # cols.extend([f'manual_heavy_frag_auc_t{k+1}' for k in range(3)])
 
     return pd.DataFrame(all_records, columns=cols)
 
@@ -206,7 +197,6 @@ def _create_label_df():
         # fname = PDAC_SIT_MANUAL_DIR / 'PDAC273_Sub6_spiked_ratio_rep1-3_outliertest_20211020.xlsx'
         print(fname.name)
         patient_id = int(fname.name[4:7])
-
         
         wb = load_workbook(fname)
         sheet_names = wb.sheetnames
@@ -228,6 +218,8 @@ def get_label_df():
     fpath = data_dir / 'PDAC_SIT_label.csv'
     if fpath.exists():
         label_df = pd.read_csv(fpath)
+        label_df['manual_peak_quality'] = \
+            label_df['manual_peak_quality'].apply(lambda s : np.array(eval(s), dtype=np.int32))
     else:
         label_df = _create_label_df()
         # manual correction (Excel file has been updated)
@@ -247,11 +239,19 @@ def get_label_df():
         # label_df.loc[m, 'manual_frag_quality_t2'] = True
         # label_df.loc[m, 'manual_frag_quality_t3'] = True
         label_df.to_csv(fpath, index=False)
-
-    # overwrite incorrect labels
-    m = label_df['manual_ratio'].isnull()
-    for k in range(3):
-        label_df.loc[m, f'manual_frag_quality_t{k+1}'] = False
+    
+    # def _make_manual_peak_quality(row):
+    #     if pd.isna(row['manual_ratio']):
+    #         return np.zeros(3, dtype=np.int32)
+    #     return np.array([
+    #             row[f'manual_frag_quality_t{k+1}'] 
+    #                 for k in range(3)], dtype=np.int32)
+    
+    # label_df['manual_peak_quality'] = label_df.apply(_make_manual_peak_quality, axis=1)
+    
+    drop_cols = [col for col in label_df.columns if 'manual' in col and 'frag' in col]
+    drop_cols.extend(['ion_order', 'light_pmol', 'heavy_pmol', 'manual_ratio_desc'])
+    label_df = label_df.drop(columns=drop_cols)
 
     ms_df = get_msdata_df()
     label_df = label_df.merge(ms_df, 
@@ -264,8 +264,7 @@ def get_label_df():
     return label_df
 
 def _create_chrom_df():
-    # save_path = private_data_dir / 'PDAC_SIT_chrom.pkl'
-    # chrom_df = pd.read_pickle(save_path)
+    
     save_path = data_dir / 'PDAC_SIT_xic.pkl'
     ms_df = get_msdata_df()
     trans_df = get_transition_df()
@@ -427,7 +426,9 @@ def get_metadata_df():
                             on=cols[:3])\
                        .set_index('label_idx')
     
-    label_df['manual_quality'] = label_df['manual_ratio'].notnull().astype(np.int64)
+    label_df['manual_quality'] = label_df['manual_ratio'].notnull().astype(np.int32)
+    for col in label_df.select_dtypes(include=[np.object_]).columns.difference(['manual_peak_quality']):
+        label_df[col] = label_df[col].astype(str)
 
     return label_df, xic_data
 

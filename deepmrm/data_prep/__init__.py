@@ -9,18 +9,10 @@ def get_metadata_df(use_scl=False, only_quantifiable_peak=True):
 
     if use_scl:
         scl_df, scl_xic = scl.get_metadata_df()
-        scl_df['replicate_id'] = 0
-        for i in range(3):
-            scl_df[f'manual_frag_quality_t{i+1}'] = 1
-
-        # scl_df.index = pd.RangeIndex(100000, 100000+scl_df.shape[0])
         cols = scl_df.columns.intersection(label_df.columns)
         label_df = pd.concat((label_df[cols], scl_df[cols]), ignore_index=True)
     else:
         scl_xic = None
-
-    for i in range(3):
-        label_df[f'manual_frag_quality_t{i+1}'] = label_df[f'manual_frag_quality_t{i+1}'].astype(int)
 
     # time unit from minutes to seconds
     time_columns = ['light_rt', 'heavy_rt', 'start_time', 'end_time']

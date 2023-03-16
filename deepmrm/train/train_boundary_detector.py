@@ -6,37 +6,34 @@ from torch.optim.lr_scheduler import StepLR
 from mstorch.data.manager import DataManager
 from mstorch.tasks import ObjectDetectionTask
 from mstorch.utils.logger import get_logger
-from mstorch.utils.data.collate import SelectiveCollation
 from mstorch.enums import PartitionType
 
 from deepmrm import model_dir
-from deepmrm.constant import XIC_KEY, TIME_KEY, TARGET_KEY
 from deepmrm.data.dataset import DeepMrmDataset
 from deepmrm.data_prep import get_metadata_df
 from deepmrm.model.boundary_detect import BoundaryDetector
 from deepmrm.transform.make_input import MakeTagets, MakeInput
 from deepmrm.train.trainer import BaseTrainer
 from deepmrm.transform.augment import RandomResizedCrop, TransitionJitter
-
+from deepmrm.data import obj_detection_collate_fn
 
 logger = get_logger('DeepMRM')
 num_workers = 4
 gpu_index = 0
-cycle_time = 0.5
 RANDOM_SEED = 2022
 
 task = ObjectDetectionTask('peak_detect', box_dim=1, num_classes=2)
 
 # Define transforms
 transform = T.Compose([
-                MakeInput(force_resampling=True, use_rt=False, cycle_time=cycle_time),
+                MakeInput(force_resampling=True, use_rt=False),
                 MakeTagets()
             ])
 
 aug_transform = T.Compose([
-        MakeInput(force_resampling=True, use_rt=False, cycle_time=cycle_time),
+        MakeInput(force_resampling=True, use_rt=False),
         TransitionJitter(p=0.25),
-        RandomResizedCrop(p=0.7, cycle_time=cycle_time),
+        RandomResizedCrop(p=0.7),
         MakeTagets()
     ])
 
@@ -63,7 +60,6 @@ def run_train(
                 transform=transform)
     
     logger.info(f'The size of training-set: {len(ds)}')
-    obj_detection_collate_fn = SelectiveCollation(exclusion_keys=[TARGET_KEY, TIME_KEY, XIC_KEY])
 
     data_mgr = DataManager(
                 task, 
@@ -100,7 +96,9 @@ def run_train(
 
 if __name__ == "__main__":
     
-    run_train("DeepMRM_BD", backbone='resnet18', augmentation=True)
+    run_train("DeepMRM_BD_L1", backbone='resnet18_light', augmentation=True)
+
+    run_train("DeepMRM_BD_L2", backbone='resnet18', augmentation=True)
 
     # run_train(
     #     "DeepMRM_Model_SCL",

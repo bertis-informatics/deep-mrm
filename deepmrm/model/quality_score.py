@@ -16,10 +16,11 @@ class QualityScorer(ResNet1x3):
     def __init__(self,
                  name,
                  task,
+                 layers=[1, 1, 1, 1],
                  block=BasicBlock1x3):
         
         super(QualityScorer, self).__init__(
-            layers=[1, 1, 1, 1],
+            layers=layers,
             block=block,
             inplanes=64, 
             conv1_height=2
@@ -71,49 +72,104 @@ class QualityScorer(ResNet1x3):
         return loss
 
     
-    def predict(self, xic_array, peak_boundary, max_candidates=6):
+    def score_peak_group(self, xic_array, peak_boundary, max_candidates=6):
         
         num_transitions = xic_array.shape[1]
         if num_transitions < 2:
             # there is only one transition. Can't scoring it
             return {idx: 0 for idx in range(num_transitions)}
 
+        
         st_idx, ed_idx = np.around(peak_boundary).astype(int)
-        ct_idx = int( np.median(xic_array[1, :, st_idx:ed_idx].argmax(axis=1)) ) + st_idx
-        trans_indexes = xic_array[1, :, ct_idx].argsort()[::-1][:max_candidates]
+        xic_seg_array = xic_array[:, :, st_idx:ed_idx]
+
+        if num_transitions > max_candidates:
+            ct_idx_ = int( np.median(xic_seg_array[1, :, :].argmax(axis=1)) )
+            trans_indexes = xic_seg_array[1, :, ct_idx_].argsort()[::-1][:max_candidates]
+        else:
+            trans_indexes = np.arange(num_transitions)
 
         indexes = list(combinations(trans_indexes, 2))
+        
         xic_tensors = torch.stack([
-                        self.batch_xics.normalize(xic_array[:, idx, st_idx:ed_idx]) 
+                        self.batch_xics.normalize(xic_seg_array[:, idx, :]) 
                             for idx in indexes
                     ]).to(self.device)
         
         logits = self(xic_tensors)
-        scores = logits.sigmoid()
+        # scores = logits.sigmoid()
+        # best_xic_pair_idx = indexes[scores.argmax()] 
+        # xic_rep = xic_seg_array[:, best_xic_pair_idx, :].sum(axis=1, keepdims=True)
+        xic_rep = xic_tensors[logits.argmax(), :, :, :].sum(axis=1, keepdim=True).cpu().numpy()
+        # xic_rep = xic_tensors[scores.argmax(), :, [0], :].cpu().numpy()
 
-        # Compute quality score for individual transitions
-        predictions = {idx: 0 for idx in trans_indexes}
-        num_trans = len(trans_indexes)
-        for trans_tup, score in zip(indexes, scores):
-            s = score.item()
-            predictions[trans_tup[0]] += s/(num_trans-1)
-            predictions[trans_tup[1]] += s/(num_trans-1)
+        xic_input = np.concatenate((xic_seg_array, xic_rep), axis=1)
+        xic_tensors2 = torch.stack([
+                        self.batch_xics.normalize(xic_input[:, (i, num_transitions), :]) 
+                            for i in range(num_transitions)
+                    ]).to(self.device)
+        
+        # from deepmrm.utils.plot import plot_heavy_light_pair        
+        # from matplotlib import pyplot as plt
+        # plt.figure()
+        # plot_heavy_light_pair(np.arange(xic_input.shape[-1]), xic_tensors2[2, :].cpu().numpy())
+        # #plot_heavy_light_pair(np.arange(len(time)), xic[:, [0, 2], :], manual_bd=target_boxes, pred_bd=pred_boxes)
+        # plt.savefig('./temp/temp.jpg')        
+        
+        logits = self(xic_tensors2)
+        scores = logits.sigmoid()
+        predictions = scores.squeeze().cpu().numpy()
+
+        # xic_temp = self.batch_xics.normalize(
+        #                 xic_array[:, best_xic_pair_idx, st_idx:ed_idx])
+        
+        # # Compute quality score for individual transitions
+        # predictions = np.zeros(num_transitions, dtype=np.float32)
+        # # predictions = {idx: 0 for idx in trans_indexes}
+        # num_trans = len(trans_indexes)
+        # for trans_tup, score in zip(indexes, scores):
+        #     s = score.item()
+        #     predictions[trans_tup[0]] += s/(num_trans-1)
+        #     predictions[trans_tup[1]] += s/(num_trans-1)
 
         return predictions
+    
+
+    def predict(self, dataset, bd_output_df):
+        """_summary_
+
+        Args:
+            ds_loader (torch.utils.data.DataLoader): DataLoader instance
+            bd_output_df (pandas.DataFrame): boundary detection output
+
+        Returns:
+            _type_: _description_
+        """
+
+        if len(dataset) != bd_output_df.shape[0]:
+            raise ValueError('len(dataset) != len(bd_output_df)')
+        
+        peak_quality_results = []
+        self.eval()
+        with torch.no_grad():
+            for i in tqdm(range(len(dataset))):
+                sample = dataset[i]
+                idx = sample[dataset.metadata_index_name]
+                xic_array = sample[XIC_KEY]
+                peak_quality_results.append(
+                        np.array([
+                            self.score_peak_group(xic_array, peak_boundary) 
+                                for peak_boundary in bd_output_df.loc[idx, 'boxes']
+                        ], dtype=np.float32)
+                    )
+        
+        bd_output_df['peak_quality'] = peak_quality_results
+
+        return bd_output_df
 
 
     def evaluate(self, testset_loader):
-        """
-        Collect model outputs against testset, and 
-        make results in tabular format (i.e. pandas.DataFrame)
         
-        Args:
-            testset_loader (torch.utils.data.DataLoader): DataLoader instance for test-set
-
-        Returns:
-            pandas.DataFrame: evaluation results in DataFrame
-        """
-
         assert isinstance(testset_loader, DataLoader)
 
         def convert_to_list(outputs):
@@ -148,6 +204,13 @@ class QualityScorer(ResNet1x3):
                 batch_result = {
                     col: convert_to_list(preds_) for col, preds_ in predictions.items()
                 }
+
+                # update with labeled data
+                if 'manual_quality' in batched_samples:
+                    batch_result['manual_quality'] = convert_to_list(batched_samples['manual_quality'])
+                    # for k in ['boxes', 'labels']:
+                    #     batch_result[f'target_{k}'] = [
+                    #         target[k] for target in batched_samples[TARGET_KEY]]                
 
                 dfs.append(pd.DataFrame.from_dict(batch_result))
 
