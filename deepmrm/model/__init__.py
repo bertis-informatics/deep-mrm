@@ -2,7 +2,6 @@ from pathlib import Path
 import torch
 
 
-
 def load_models(model_dir, device):
 
     model_dir = Path(model_dir)

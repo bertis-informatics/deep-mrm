@@ -16,7 +16,7 @@ class QualityScorer(ResNet1x3):
     def __init__(self,
                  name,
                  task,
-                 layers=[1, 1, 1, 1],
+                 layers=[2, 2, 2, 2],
                  block=BasicBlock1x3):
         
         super(QualityScorer, self).__init__(
@@ -46,22 +46,14 @@ class QualityScorer(ResNet1x3):
         device = next(self.parameters()).device
         return device
 
-    # def forward(self, xic_tensors):
-        # list of [Pairs, Channels, Length]
-        # xic_list = batched_samples[XIC_KEY] 
-        # xic_tensors = self.batch_xics(self.device, xic_list)
-        # quality_scores = self.cnn(xic_tensors)        
-        # outputs = {PEAK_QUALITY: quality_scores}
-        # return outputs
-
     def compute_loss(self, batched_samples, metrics=None):
 
         xic_list = batched_samples[XIC_KEY] 
         targets = batched_samples[self.task.label_column]
-        xic_tensors, targets = self.batch_xics(self.device, xic_list, targets)
+        xics, targets = self.batch_xics(self.device, xic_list, targets)
 
         # get prediction tensor
-        preds = self(xic_tensors)
+        preds = self(xics.tensors)
         probs = preds.sigmoid()
         targets = targets.reshape(-1, 1).to(torch.float32)
         loss = self.criterion(probs, targets)
@@ -79,7 +71,6 @@ class QualityScorer(ResNet1x3):
             # there is only one transition. Can't scoring it
             return {idx: 0 for idx in range(num_transitions)}
 
-        
         st_idx, ed_idx = np.around(peak_boundary).astype(int)
         xic_seg_array = xic_array[:, :, st_idx:ed_idx]
 
@@ -91,17 +82,21 @@ class QualityScorer(ResNet1x3):
 
         indexes = list(combinations(trans_indexes, 2))
         
+        #(N-combs, 2-channel, 2-pair, len)
         xic_tensors = torch.stack([
                         self.batch_xics.normalize(xic_seg_array[:, idx, :]) 
                             for idx in indexes
                     ]).to(self.device)
         
         logits = self(xic_tensors)
-        # scores = logits.sigmoid()
-        # best_xic_pair_idx = indexes[scores.argmax()] 
-        # xic_rep = xic_seg_array[:, best_xic_pair_idx, :].sum(axis=1, keepdims=True)
-        xic_rep = xic_tensors[logits.argmax(), :, :, :].sum(axis=1, keepdim=True).cpu().numpy()
-        # xic_rep = xic_tensors[scores.argmax(), :, [0], :].cpu().numpy()
+        scores = logits.sigmoid()
+        rep_idx = np.unique([ix for s, ix in zip(scores, indexes) if s > 0.5])
+        if len(rep_idx) > 0:
+            # found quantifiable XIC pair with high confidence
+            # xic_rep = xic_tensors[m.flatten(), :, :, :].sum(axis=1, keepdim=True).cpu().numpy()
+            xic_rep = xic_seg_array[:, rep_idx, :].sum(axis=1, keepdims=True)
+        else:
+            xic_rep = xic_seg_array.sum(axis=1, keepdims=True)
 
         xic_input = np.concatenate((xic_seg_array, xic_rep), axis=1)
         xic_tensors2 = torch.stack([
@@ -115,22 +110,9 @@ class QualityScorer(ResNet1x3):
         # plot_heavy_light_pair(np.arange(xic_input.shape[-1]), xic_tensors2[2, :].cpu().numpy())
         # #plot_heavy_light_pair(np.arange(len(time)), xic[:, [0, 2], :], manual_bd=target_boxes, pred_bd=pred_boxes)
         # plt.savefig('./temp/temp.jpg')        
-        
         logits = self(xic_tensors2)
         scores = logits.sigmoid()
         predictions = scores.squeeze().cpu().numpy()
-
-        # xic_temp = self.batch_xics.normalize(
-        #                 xic_array[:, best_xic_pair_idx, st_idx:ed_idx])
-        
-        # # Compute quality score for individual transitions
-        # predictions = np.zeros(num_transitions, dtype=np.float32)
-        # # predictions = {idx: 0 for idx in trans_indexes}
-        # num_trans = len(trans_indexes)
-        # for trans_tup, score in zip(indexes, scores):
-        #     s = score.item()
-        #     predictions[trans_tup[0]] += s/(num_trans-1)
-        #     predictions[trans_tup[1]] += s/(num_trans-1)
 
         return predictions
     
@@ -189,9 +171,9 @@ class QualityScorer(ResNet1x3):
                 xic_list = batched_samples[XIC_KEY] 
                 label_list = batched_samples[self.task.label_column]
 
-                xic_tensors = self.batch_xics(self.device, xic_list)                
+                xics = self.batch_xics(self.device, xic_list)                
 
-                model_outputs = self(xic_tensors)
+                model_outputs = self(xics.tensors)
 
                 predictions = {
                         self.task.prediction_column: model_outputs.sigmoid().flatten(),

@@ -6,7 +6,7 @@ from torchvision import transforms as T
 from torchvision.transforms import functional as F
 
 from ..constant import XIC_KEY, RT_KEY, TIME_KEY
-from .transition import TransitionRankShuffle, TransitionShuffle
+from .transition import TransitionRankShuffle
 
 
 class RandomHorizontalFlip(torch.nn.Module):
@@ -223,14 +223,19 @@ class RandomErase(torch.nn.Module):
 
 class RandomRTShift(torch.nn.Module):
 
-    def __init__(self, p=0.5):
+    def __init__(self, 
+                 shift_scale_lb=0.5,
+                 shift_scale_ub=4.0,
+                 p=0.5):
         super().__init__()
         self.p = p
+        self._lower = shift_scale_lb 
+        self._upper = shift_scale_ub
 
     def forward(self, sample):
 
-        if sample['manual_quality'] == 0:
-            return sample
+        # if sample['manual_quality'] == 0:
+        #     return sample
 
         if torch.rand(1) > self.p:
             return sample
@@ -238,22 +243,26 @@ class RandomRTShift(torch.nn.Module):
         time_points = sample[TIME_KEY]
         start_time = sample['start_time']
         end_time = sample['end_time']
-        rt = sample[RT_KEY]
         xic = sample[XIC_KEY]
+        manual_peak_quality = sample['manual_peak_quality']
 
         ep = end_time - start_time 
-        shift_time = np.random.uniform(ep*0.5, ep*1.0)
+        shift_time = np.random.uniform(ep*self._lower, ep*self._upper)
         shift_index = int( shift_time * (len(time_points)/(time_points[-1] - time_points[0])) )
+        
+        # select a channel randomly
+        c = np.random.choice([0, 1], p=[0.7, 0.3])
 
         if torch.rand(1) > 0.5:
-            xic[0, :, :-shift_index] = xic[0, :, shift_index:]
-            xic[0, :, -shift_index:] = 0
+            xic[c, :, :-shift_index] = xic[c, :, shift_index:]
+            xic[c, :, -shift_index:] = 0
         else:
-            xic[0, :, shift_index:] = xic[0, :, :-shift_index]
-            xic[0, :, :shift_index] = 0
+            xic[c, :, shift_index:] = xic[c, :, :-shift_index]
+            xic[c, :, :shift_index] = 0
 
         sample[XIC_KEY] = xic
         sample['manual_quality'] = 0
+        sample['manual_peak_quality'] = np.zeros(manual_peak_quality.shape)
 
         return sample        
 
@@ -318,3 +327,74 @@ class TransitionJitter(torch.nn.Module):
         sample[XIC_KEY] = xic_array
 
         return sample        
+
+
+class MultiplicativeJitter(torch.nn.Module):
+
+    def __init__(self, 
+                 noise_scale_ub=1e-3,
+                 noise_scale_lb=1e-4,
+                 p=0.5):
+        super().__init__()
+        self.p = p
+        self._upper = np.log(noise_scale_ub)
+        self._lower = np.log(noise_scale_lb)
+
+    def get_random_scale(self):
+        rd = np.random.rand()
+        rd = rd * (self._upper - self._lower) + self._lower
+        return np.exp(rd)
+
+    def forward(self, sample):
+        if torch.rand(1) > self.p:
+            return sample
+
+        xic_array = sample[XIC_KEY]
+        # number of heavy & light pairs
+        num_transition_pairs = xic_array.shape[1]
+        scale = self.get_random_scale()
+        
+        # Apply transition-specific noise
+        for i in range(2):
+            for j in range(num_transition_pairs):
+                xic = xic_array[i, j, :]
+                # xic_center = np.median(xic)
+                quantile_range = np.quantile(xic, [0.25, 0.75])
+                xic_scale = quantile_range[1] - quantile_range[0]
+                noise_data = (scale * xic) * np.random.normal(
+                                            loc=0, 
+                                            scale=xic_scale,
+                                            size=(xic.shape[-1]))
+                new_xic = xic + noise_data
+                xic_array[i, j, :] = new_xic.clip(0)
+
+        sample[XIC_KEY] = xic_array
+        return sample
+
+class ShuffleSignals(torch.nn.Module):
+
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, sample):
+        # if sample['manual_quality'] == 0:
+        #     return sample
+
+        if torch.rand(1) > self.p:
+            return sample
+
+        xic = sample[XIC_KEY]
+        manual_peak_quality = sample['manual_peak_quality']
+
+        target_channel = np.random.choice([0, 1], p=[0.7, 0.3])
+
+        # shuffle each XIC separately
+        for t in range(xic.shape[1]):
+            np.random.shuffle(xic[target_channel, t, :])
+
+        sample[XIC_KEY] = xic
+        sample['manual_quality'] = 0
+        sample['manual_peak_quality'] = np.zeros(manual_peak_quality.shape)
+
+        return sample

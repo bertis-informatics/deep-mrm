@@ -54,33 +54,6 @@ class BasicBlock1x3(BasicBlock):
         self.downsample = downsample
         self.stride = stride
 
-class BasicBlock2x3(BasicBlock):
-    expansion: int = 1
-
-    def __init__(
-        self,
-        inplanes,
-        planes,
-        stride = 1,
-        downsample = None,
-        groups = 1,
-        base_width = 64,
-        dilation = 1,
-        norm_layer = None,
-    ):
-        super(BasicBlock, self).__init__()
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        
-        # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv2x3(inplanes, planes, stride)
-        self.bn1 = norm_layer(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv2x3(planes, planes)
-        self.bn2 = norm_layer(planes)
-        self.downsample = downsample
-        self.stride = stride
-
 
 class Bottleneck1x3(Bottleneck):
     expansion: int = 4

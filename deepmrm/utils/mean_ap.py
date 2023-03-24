@@ -5,6 +5,7 @@ from torchmetrics.detection.mean_ap import (
 from typing import Any, Dict, List, Optional, Tuple
 from torch import Tensor
 import torch
+import numpy as np
 
 
 class MeanAveragePrecisionRecall(MeanAveragePrecision):
@@ -81,29 +82,39 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
         # map_metrics, mar_metrics = super()._summarize_results(precisions, recalls)
         map_metrics = MAPMetricResults()
         results = dict(precision=precisions, recall=recalls)
+        last_max_det_thr = self.max_detection_thresholds[-1]
 
-        for max_det in self.max_detection_thresholds:
-            map_metrics[f'map_det{max_det}'] = self._summarize(results, True, max_dets=max_det)
-                
-            for th in self.iou_thresholds:
-                map_metrics[f'map_{int(th*100)}_det{max_det}'] = self._summarize(
-                            results, 
-                            True, 
-                            iou_threshold=th, 
-                            max_dets=max_det)
+        for th in self.iou_thresholds:
+            map_metrics[f'map_{int(np.around(th*100))}'] = self._summarize(
+                                                                    results,
+                                                                    True,
+                                                                    iou_threshold=th,
+                                                                    max_dets=last_max_det_thr)
         
         # map_metrics.map_small = self._summarize(results, True, area_range="small", max_dets=last_max_det_thr)
         # map_metrics.map_medium = self._summarize(results, True, area_range="medium", max_dets=last_max_det_thr)
         # map_metrics.map_large = self._summarize(results, True, area_range="large", max_dets=last_max_det_thr)
         mar_metrics = MARMetricResults()
         for max_det in self.max_detection_thresholds:
-            mar_metrics[f"mar_{max_det}"] = self._summarize(results, False, max_dets=max_det)
             for th in self.iou_thresholds:
-                map_metrics[f'mar_{int(th*100)}_det{max_det}'] = self._summarize(
-                            results, 
-                            False, 
-                            iou_threshold=th, 
-                            max_dets=max_det)            
+                mar_metrics[f'mar_{int(np.around(th*100))}_det{max_det}'] = \
+                                self._summarize(results, False, iou_threshold=th, max_dets=max_det)
+                
+            # for th in self.iou_thresholds:
+            #     mar_metrics[f'mar_{int(th*100)}'] = self._summarize(
+            #                         results, 
+            #                         False, 
+            #                         iou_threshold=th,
+            #                         max_dets=last_max_det_thr)
+
+        # for max_det in self.max_detection_thresholds:
+        #     mar_metrics[f"mar_{max_det}"] = self._summarize(results, False, max_dets=max_det)
+        #     for th in self.iou_thresholds:
+        #         map_metrics[f'mar_{int(th*100)}_det{max_det}'] = self._summarize(
+        #                     results, 
+        #                     False, 
+        #                     iou_threshold=th, 
+        #                     max_dets=max_det)            
         
         # mar_metrics.mar_small = self._summarize(results, False, area_range="small", max_dets=last_max_det_thr)
         # mar_metrics.mar_medium = self._summarize(results, False, area_range="medium", max_dets=last_max_det_thr)

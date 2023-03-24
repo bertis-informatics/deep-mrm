@@ -14,6 +14,13 @@ fig_dir = Path('./reports/figures')
 logger = get_logger()
 
 
+def get_ious_from_output_df(row):
+    match_quality_matrix = line_iou(
+        torch.from_numpy(row['target_boxes']), 
+        torch.from_numpy(row['boxes']))
+    
+    return match_quality_matrix.numpy()
+
 def compute_peak_detection_performance(
                 output_df, 
                 max_detection_thresholds=[1, 3],
@@ -28,6 +35,11 @@ def compute_peak_detection_performance(
         pred_labels = row['labels']
         pred_scores = row['scores']
         pred_boxes = row['boxes']
+
+        # m = pred_scores > model_score_threshold
+        # pred_labels = pred_labels[m]
+        # pred_scores = pred_scores[m]
+        # pred_boxes = pred_boxes[m]
 
         target_boxes = row['target_boxes']
         target_labels = row['target_labels']
@@ -60,21 +72,33 @@ def compute_peak_detection_performance(
     
     metric_results = metric.compute()
     metric_results['recall_thresholds'] = np.array(metric.rec_thresholds, dtype=np.float32)
+    metric_results['iou_thresholds'] = iou_thresholds
 
     # update output_df with ious
     ious = metric_results['ious']
     output_df['ious'] = [
             v.reshape((1,)).numpy().astype(np.float32) 
                 if v.dim() == 0 else v.squeeze().numpy().astype(np.float32)
-                    for v in ious.values()
-        ]
+                    for v in ious.values()]
+
     del metric_results['ious']
     
     return metric_results, output_df
 
 
 
-def calculate_area_ratio(test_ds, output_df, xic_score_th=0.5):
+def select_xic(peak_quality, quality_threshold):
+    auto_selected_xic = np.where(peak_quality > quality_threshold)[0]
+    if len(auto_selected_xic) < 2:
+        # auto_selected_xic = [pred_quality.argmax()]
+        auto_selected_xic = np.arange(len(peak_quality))
+    return auto_selected_xic
+
+def calculate_area_ratio(
+                    test_ds, 
+                    output_df, 
+                    iou_threshold=0.5,
+                    xic_score_th=0.5):
 
     """ Estimate the light to heavy ratio for the best matching peak
     """
@@ -85,15 +109,20 @@ def calculate_area_ratio(test_ds, output_df, xic_score_th=0.5):
         target_boxes = row['target_boxes'][0]
         target_labels = row['target_labels'][0]
         pred_boxes = row['boxes']
-        
-        if (target_labels < 1) or (len(pred_boxes) < 1):
+        ious = row['ious']
+        jj = np.where(ious > iou_threshold)[0]
+
+        if (target_labels < 1) or (len(jj) < 1):
             continue
+
+        j = jj[0] # best scoring peak
 
         sample = test_ds[idx]
         xic = sample[XIC_KEY]
         time = sample[TIME_KEY]
-        pred_boxes = pred_boxes[0, :]
-        pred_quality = row['peak_quality'][0]
+        
+        pred_boxes = pred_boxes[j, :]
+        pred_quality = row['peak_quality'][j]
 
         # from deepmrm.utils.plot import plot_heavy_light_pair
         # from matplotlib import pyplot as plt
@@ -104,15 +133,17 @@ def calculate_area_ratio(test_ds, output_df, xic_score_th=0.5):
         # convert to integer
         target_boxes = target_boxes.astype(int)
         pred_boxes = pred_boxes.astype(int)
-        manually_selected_xic = np.where(sample['manual_peak_quality'] > 0)[0]
 
-        auto_selected_xic = np.where(pred_quality > xic_score_th)[0]
-        if len(auto_selected_xic) < 1:
-            auto_selected_xic = [pred_quality.argmax()]
+        manually_selected_xic = np.where(sample['manual_peak_quality'] > 0)[0] \
+                                    if 'manual_peak_quality' in sample else \
+                                np.arange(xic.shape[1])
 
+        auto_selected_xic = select_xic(pred_quality, xic_score_th)
+        
         ret = {
                 'selected_transition': auto_selected_xic,
-                'quality_score': pred_quality[auto_selected_xic].mean()
+                'quality_score': pred_quality[auto_selected_xic].mean(),
+                'iou': ious[j],
             }
         for i, k in enumerate(['light', 'heavy']):
             summed_xic = xic[i, manually_selected_xic, :].sum(axis=0)
@@ -140,111 +171,98 @@ def calculate_area_ratio(test_ds, output_df, xic_score_th=0.5):
     quant_df = pd.DataFrame.from_dict(auc_results, orient='index')
     for i, k in enumerate(['manual', 'pred', 'pred0']):
         quant_df[f'{k}_ratio'] = quant_df[f'{k}_light_area']/quant_df[f'{k}_heavy_area']
-    # y_true = quant_df['manual_ratio']
-    # y_pred = quant_df['pred_ratio']
-    # quant_df['APE'] = np.abs(y_true - y_pred)/y_true    
-
-    # m = quant_df['pred_ratio'].isnull()
-    # m &= quant_df['manual_ratio'] > 1
-    # quant_df[m]
 
     return quant_df
 
-# quant_df = quant_df.join(output_df[['manual_peak_quality', 'ious', 'manual_ratio']],
-#                         rsuffix='_ori')
 
-# iou_th = 0.3
-# m = quant_df['ious'].apply(lambda x : x[0] > iou_th)
+def create_perf_df(metric_results):
 
-# np.corrcoef(quant_df.loc[m, 'manual_ratio'], quant_df.loc[m, 'pred_ratio'])
-# np.corrcoef(quant_df.loc[m, 'manual_ratio'], quant_df.loc[m, 'pred0_ratio'])
+    iou_thresholds = metric_results['iou_thresholds']
 
-# # np.corrcoef(quant_df.loc[m, 'manual_ratio'], quant_df.loc[m, 'manual_ratio_ori'])
-# y_true = quant_df.loc[:, 'manual_ratio_ori']
-# y_pred = quant_df.loc[:, 'manual_ratio']
-# ape = np.abs(y_true - y_pred)/y_true    
-
-# quant_df[ape > 3]
-
-# aape = np.arctan(ape)
-# maape = np.mean(aape)
-# mape = ape.mean()
-# print(maape)
-# print(mape)
-
-# m2 = m & (ape > 0.2)
-# quant_df[m2]
-
-# output_df.loc[4982, :]
+    perf_ret = {k: [] for k in ['IoU', 'AP', 'AR1', 'AR3']}
+    for th in iou_thresholds:
+        perf_ret['IoU'].append(th)
+        perf_ret['AP'].append(
+            metric_results[f'map_{int(np.around(th*100))}'].item()
+        )
+        perf_ret['AR1'].append( metric_results[f'mar_{int(np.around(th*100))}_det1'].item() )
+        perf_ret['AR3'].append( metric_results[f'mar_{int(np.around(th*100))}_det3'].item() )
+        
+    return pd.DataFrame.from_dict(perf_ret)
 
 
-# # quant_df[['manual_peak_quality','selected_transition']]
-# T =  quant_df['manual_peak_quality'].apply(lambda x: x.sum())
-# m = T < 2
-# quant_df.loc[m, ['manual_peak_quality','selected_transition']]
-
-# plt.scatter(quant_df['manual_ratio'], quant_df['pred_ratio'])
-# def compute_peak_detection_performance(
-#                         test_ds, 
-#                         output_df, 
-#                         iou_thresholds,
-#                         max_detection_thresholds):
+def change_boundary_score_threshold(output_df, score_th):
     
-#     # calculate AR, mAP and then update output_df with IoUs
-#     map_result, output_df = calculate_mean_average_precision_recall(
-#                                 output_df, 
-#                                 iou_thresholds=iou_thresholds,
-#                                 max_detection_thresholds=max_detection_thresholds
-#                             )
+    new_output_df = output_df.copy()
+    for idx, row in output_df.iterrows():
+        m = row['scores'] > score_th
+        for col in ['boxes', 'scores', 'labels', 'peak_quality']:
+            if col in new_output_df.columns:
+                new_output_df.at[idx, col] = row[col][m]
 
-#     # for iou_th in iou_thresholds:
-#     #     for max_det in max_detection_thresholds:
-#     #         quant_df = calculate_area_ratio(
-#     #                         test_ds,
-#     #                         output_df,
-#     #                         iou_threshold=iou_th,
-#     #                         max_det_threshold=max_det)
-#     #                         # score_th=score_th)
-#     #         col_rename = {
-#     #             'selected_xic_pair': f'selected_xic_pair_{int(iou_th*100)}_det{max_det}',
-#     #             'pred_ratio': f'pred_ratio_{int(iou_th*100)}_det{max_det}',
-#     #             'manual_ratio': f'manual_ratio_{int(iou_th*100)}_det{max_det}',
-#     #             'APE': f'APE_{int(iou_th*100)}_det{max_det}',
-#     #         }
-#     #         quant_df = quant_df.rename(columns=col_rename)
-#     #         output_df = output_df.join(quant_df[list(col_rename.values())], how='left')
-    
-#     return output_df, map_result
+    return new_output_df
 
 
-# result_df = pd.read_pickle('reports/PDAC_results.pkl')
 
-# def create_result_table(test_ds, output_df):
 
-#     meta_df = test_ds.metadata_df
-#     output_df = meta_df.join(output_df)
-    
-#     manual_bondary_index = {}
-#     for idx, row in enumerate(output_df.iterrows()):
-#         index, row = row
-#         sample = test_ds[idx]
-#         xic = sample[XIC_KEY]
-#         time = sample[TIME_KEY]
-#         st = sample['start_time']
-#         ed = sample['end_time']
-#         rt = sample[RT_KEY]
-#         xic_cnt = xic.shape[1]
-#         manual_bondary_idx = np.interp([st, rt, ed], time, np.arange(len(time)))
-#         manual_bondary_index[index] = {
-#             'start_index': manual_bondary_idx[0],
-#             'rt_index': manual_bondary_idx[1],
-#             'end_index': manual_bondary_idx[2],
-#             'xic_count': xic_cnt,
-#             'xic_start': time[0],
-#             'xic_end': time[-1],
-#         }
-    
-#     output_df = output_df.join(
-#             pd.DataFrame.from_dict(manual_bondary_index, orient='index'))
+def create_prediction_results(test_ds, output_df, peptide_id_col=None, quality_th=0.5):
+
+    pred_results = {}
+    for idx, row in enumerate(output_df.iterrows()):
+        index, row = row
+        sample = test_ds[idx]
+        time = sample[TIME_KEY]
+        xic = sample[XIC_KEY]
+
+        pred_boxes = row['boxes']
+        pred_scores = row['scores']
+        pred_quality = row['peak_quality']
+
+        pred_times = np.interp(pred_boxes.reshape(1, -1), np.arange(len(time)), time)
+        pred_times = pred_times.reshape(-1, 2)
+
+        ret = {
+            'boxes': pred_times,
+            'scores': pred_scores,
             
-#     return output_df
+            'peak_quality': pred_quality,
+            'quantification_scores': [],
+
+            'light_area': [],
+            'light_background': [],
+            'heavy_area': [],
+            'heavy_background': [],
+            'selected_transition_index': [],
+
+            'light0_area': [],
+            'heavy0_area': [],
+        }
+        
+        #for pred_tm, pred_qt in zip(pred_times, pred_quality):
+        for pred_box, pred_qt in zip(pred_boxes, pred_quality):
+            pred_box = pred_box.astype(np.int32)
+
+            auto_selected_xic = select_xic(pred_qt, quality_th)
+            ret['selected_transition_index'].append(auto_selected_xic)
+            ret['quantification_scores'].append(pred_qt[auto_selected_xic].mean())
+
+            for i, k in enumerate(['light', 'heavy']):
+                summed_xic = xic[i, auto_selected_xic, :].sum(axis=0)
+                peak_area, background = calculate_peak_area(
+                                            time, summed_xic, 
+                                            pred_box[0], pred_box[1])
+                ret[f'{k}_area'].append(peak_area)
+                ret[f'{k}_background'].append(background)
+            
+                summed_xic = xic[i, :, :].sum(axis=0)
+                peak_area, background = calculate_peak_area(
+                                            time, summed_xic, 
+                                            pred_box[0], pred_box[1])
+                ret[f'{k}0_area'].append(peak_area)
+
+        if peptide_id_col is not None:
+            ret[peptide_id_col] = sample[peptide_id_col]
+
+        pred_results[index] = ret
+
+    return pred_results

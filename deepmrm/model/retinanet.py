@@ -251,7 +251,11 @@ class RetinaNet(nn.Module):
         return self.head.compute_loss(targets, head_outputs, anchors, matched_idxs)
   
 
-    def predict(self, xic_tensors):
+    def predict(self, xics):
+
+        xic_tensors = xics.tensors
+        xic_sizes = xics.image_sizes
+
         features, head_outputs, anchors = self(xic_tensors)
 
         # features: #feature_maps x [#samples, C, W, H]
@@ -273,11 +277,14 @@ class RetinaNet(nn.Module):
         # anchors = split_anchors
         # image_shape = xic_tensors.shape[-2:]
         # compute the detections
-        detections = self.postprocess_detections(split_head_outputs, split_anchors, xic_tensors.shape[-2:])
+        detections = self.postprocess_detections(
+                            split_head_outputs, 
+                            split_anchors, 
+                            xic_sizes)
 
         return detections
 
-    def postprocess_detections(self, head_outputs, anchors, image_shape):
+    def postprocess_detections(self, head_outputs, anchors, xic_shapes):
         # type: (Dict[str, List[Tensor]], List[List[Tensor]], List[Tuple[int, int]]) -> List[Dict[str, Tensor]]
         
         # head_outputs: {'cls_logits': #feature_maps x [#samples, #anchors_in_level, #classes], ...}
@@ -292,7 +299,7 @@ class RetinaNet(nn.Module):
             logits_per_image = [cl[index] for cl in class_logits]
             box_regression_per_image = [br[index] for br in box_regression]
             
-            anchors_per_image, image_shape = anchors[index], image_shape
+            anchors_per_image, xic_shape = anchors[index], xic_shapes[index]
 
             image_boxes = []
             image_scores = []
@@ -339,11 +346,13 @@ class RetinaNet(nn.Module):
                 )
                 
                 # boxes_per_level = box_ops.clip_boxes_to_image(boxes_per_level, image_shape)
-                boxes_per_level = boxes_per_level.clamp(min=0, max=image_shape[1])
-                image_boxes.append(boxes_per_level)
-                image_scores.append(scores_per_level)
+                # exclude boundaries outside of the length of XIC
+                m = boxes_per_level[:, 0] < xic_shape[1]
+                boxes_per_level[m] = boxes_per_level[m].clamp(min=0, max=xic_shape[1])
+                image_boxes.append(boxes_per_level[m])
+                image_scores.append(scores_per_level[m])
                 # image_all_scores.append(scores[anchor_idxs])
-                image_labels.append(labels_per_level)
+                image_labels.append(labels_per_level[m])
 
             image_boxes = torch.cat(image_boxes, dim=0)
             image_scores = torch.cat(image_scores, dim=0)
@@ -359,7 +368,7 @@ class RetinaNet(nn.Module):
             image_boxes_temp[:, 2] = image_boxes[:, 1]
             image_boxes_temp[:, 3] = 1 # image_shape[0]
 
-            m = (image_boxes[:, 0] - image_boxes[:, 1]).abs() > 1
+            m = image_boxes[:, 1] - image_boxes[:, 0] > 1
             image_boxes, image_boxes_temp, image_scores, image_labels = \
                 image_boxes[m], image_boxes_temp[m], image_scores[m], image_labels[m]
 

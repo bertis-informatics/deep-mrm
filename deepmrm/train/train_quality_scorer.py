@@ -10,14 +10,16 @@ from mstorch.utils.logger import get_logger
 from mstorch.enums import PartitionType
 
 from deepmrm import model_dir
-from deepmrm.constant import XIC_KEY, TIME_KEY
 from deepmrm.data.dataset import DeepMrmDataset
 from deepmrm.data_prep import get_metadata_df
 from deepmrm.model.quality_score import QualityScorer
 from deepmrm.transform.make_input import MakeInput
 from deepmrm.transform.make_target import MakePeakQualityTarget
 from deepmrm.train.trainer import BaseTrainer
-from deepmrm.transform.augment import RandomResizedCrop, TransitionJitter
+from deepmrm.transform.augment import (
+    RandomResizedCrop, MultiplicativeJitter,
+    RandomRTShift, ShuffleSignals,
+)
 from deepmrm.data import obj_detection_collate_fn
 
 logger = get_logger('DeepMRM')
@@ -39,17 +41,15 @@ transform = T.Compose([
 
 aug_transform = T.Compose([
         MakeInput(force_resampling=True, use_rt=False),
-        TransitionJitter(p=0.25),
+        MultiplicativeJitter(p=0.25, noise_scale_ub=1e-3, noise_scale_lb=1e-4),
+        T.RandomChoice([RandomRTShift(p=0.25), ShuffleSignals(p=0.25)]),
         RandomResizedCrop(p=0.7),
+        # RandomRTShift(p=0.2),
         MakePeakQualityTarget()
     ])
 
 
-def run_qs_model(model_name, layers):
-    augmentation = True
-    batch_size = 512 
-    num_epochs = 100
-    split_ratio=(.8, .1, .1)
+def run_qs_model(model_name, num_epochs=100, batch_size=512, augmentation=True):
 
     logger.info(f'Start loading dataset')
     label_df, pdac_xic, scl_xic = get_metadata_df(
@@ -64,14 +64,12 @@ def run_qs_model(model_name, layers):
                 transform=transform)
 
     logger.info(f'The size of training-set: {len(ds)}')
-    
-
     data_mgr = DataManager(
                 task, 
                 ds, 
                 num_workers=num_workers, 
                 collate_fn=obj_detection_collate_fn, 
-                split_ratio=split_ratio,
+                split_ratio=(.8, .1, .1),
                 random_seed=RANDOM_SEED)
     data_mgr.split()
 
@@ -86,7 +84,7 @@ def run_qs_model(model_name, layers):
 
     trainer.add_metrics(task, BinaryAccuracy())
     
-    model = QualityScorer(model_name, task, layers=layers)
+    model = QualityScorer(model_name, task)
 
     optimizer = torch.optim.Adam(model.parameters())
     scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
@@ -94,7 +92,6 @@ def run_qs_model(model_name, layers):
 
     ## 6. start training
     trainer.train(num_epochs=num_epochs, batch_size=batch_size)
-
 
 # testset_loader = data_mgr.get_dataloader('test')
 # ret_df = model.evaluate(testset_loader)
@@ -127,5 +124,5 @@ def run_qs_model(model_name, layers):
 # plt.savefig('./temp/roc_curve.jpg')
 
 if __name__ == "__main__":
-    run_qs_model('DeepMRM_QS', layers=[1, 1, 1, 1])
+    run_qs_model('DeepMRM_QS', num_epochs=100)
     # run_qs_model('DeepMRM_QS_L2', layers=[2, 2, 2, 2])

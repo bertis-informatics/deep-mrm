@@ -1,7 +1,7 @@
 import math
 import collections
 import torch.nn
-from torchvision import transforms as T
+from torchvision.models.detection.image_list import ImageList
 import numpy as np
 
 
@@ -38,7 +38,7 @@ class BatchXics(torch.nn.Module):
 
     def forward(self, device, xic_list, targets=None):
         
-        batch_shapes = np.array([xic.shape for xic in xic_list])
+        batch_shapes = np.array([xic.shape for xic in xic_list], dtype=np.int32)
         batch_shape = np.max(batch_shapes, axis=0)
         
         # the length of XIC matrix should be divisable by stride such that
@@ -57,11 +57,12 @@ class BatchXics(torch.nn.Module):
         for i, xic_array in enumerate(xic_list):
             xic_tensor = self.normalize(xic_array)
             batched_xics[i, :, :xic_tensor.shape[1], :xic_tensor.shape[2]].copy_(xic_tensor)
-            # [NOTE] make sure there are at least 3 XICs
+            # [NOTE] make sure there are at least min_transitions
             if xic_tensor.shape[1] < self.min_transitions:
                 for j in range(xic_tensor.shape[1], self.min_transitions):
                     batched_xics[i, :, j, :xic_tensor.shape[2]].copy_(xic_tensor[:, 0, :])
 
+        batched_xics = ImageList(batched_xics, batch_shapes[:, -2:])
         if targets is not None:
             if isinstance(targets, collections.abc.Sequence):
                 targets = [
@@ -70,7 +71,6 @@ class BatchXics(torch.nn.Module):
                 ]
             else:
                 targets = targets.to(device)
-                
             return batched_xics, targets
 
         return batched_xics

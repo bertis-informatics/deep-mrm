@@ -8,6 +8,7 @@ from mstorch.utils import get_logger
 from deepmrm.transform.make_input import MakeInput, TransitionDuplicate
 from deepmrm.constant import TIME_KEY, XIC_KEY
 from deepmrm.utils.peak import calculate_peak_area
+from deepmrm.utils.eval import select_xic
 from deepmrm.utils.transition_select import find_best_transition_index
 from deepmrm.data import obj_detection_collate_fn
 from deepmrm.predict.input_xic import XicData, DeepMrmInputDataset
@@ -47,19 +48,16 @@ def create_prediction_results(test_ds, output_df, peptide_id_col=None, quality_t
             'light_background': [],
             'heavy_area': [],
             'heavy_background': [],
-            'selected_xic_pair': [],
+            'selected_transition_index': [],
         }
         
         #for pred_tm, pred_qt in zip(pred_times, pred_quality):
         for pred_box, pred_qt in zip(pred_boxes, pred_quality):
             pred_box = pred_box.astype(np.int32)
-            # pred_st, pred_ed = pred_tm
-            #auto_selected_xic = find_best_transition_index(time, xic, pred_st, pred_ed)
-            auto_selected_xic = np.where(pred_qt > quality_th)[0]
-            if len(auto_selected_xic) < 1:
-                auto_selected_xic = [pred_qt.argmax()]
+            # auto_selected_xic = find_best_transition_index(time, xic, pred_st, pred_ed)
+            auto_selected_xic = select_xic(pred_qt, quality_th)
 
-            ret['selected_xic_pair'].append(auto_selected_xic)
+            ret['selected_transition_index'].append(auto_selected_xic)
             ret['quantification_scores'].append(pred_qt[auto_selected_xic].mean())
 
             for i, k in enumerate(['light', 'heavy']):
@@ -70,7 +68,6 @@ def create_prediction_results(test_ds, output_df, peptide_id_col=None, quality_t
                 ret[f'{k}_area'].append(peak_area)
                 ret[f'{k}_background'].append(background)
         
-
         if peptide_id_col is not None:
             ret[peptide_id_col] = sample[peptide_id_col]
 
@@ -79,12 +76,15 @@ def create_prediction_results(test_ds, output_df, peptide_id_col=None, quality_t
     return pred_results
 
 
-def _load_models(model_dir):
+def _load_models(model_dir, boundary_threshold=0.05, nms_thresh=0.3):
     global _boundary_detector, _quality_scorer
     model_dir = Path(model_dir)
 
     if (_boundary_detector is None) or (_quality_scorer is None):
         _boundary_detector, _quality_scorer = load_models(model_dir=model_dir, device=device)
+
+    _boundary_detector.detector.score_thresh = boundary_threshold
+    _boundary_detector.detector.nms_thresh = nms_thresh
     
     return _boundary_detector, _quality_scorer
 

@@ -8,24 +8,16 @@ from torchvision import transforms as T
 from mstorch.data.mass_spec.tolerance import Tolerance, ToleranceUnit
 from deepmrm import model_dir
 from deepmrm.data.dataset import PRMDataset
-from deepmrm.data_prep.eoc import MZML_DIR
-from deepmrm.transform.make_input import MakeInput, TransitionDuplicate
-from deepmrm.utils.eval import (
-    calculate_area_ratio, create_result_table)
 from deepmrm.data.transition import TransitionData
 from deepmrm.data import obj_detection_collate_fn
-from deepmrm.transform.make_input import MakeInput, SelectSegment
-
 from deepmrm.data_prep import p100_prm
-
-model_names = [
-    'ResNet18_Aug', 
-    'ResNet34_Aug', 
-    'ResNet50_Aug', 
-    'ResNet34_NoAug', 
-    'ResNet34_NoAug_NoGrpConv',
-    'ResNet34_Aug_NoGrpConv',
-]
+from scipy.stats import pearsonr, spearmanr
+from deepmrm.utils.eval import (
+    calculate_area_ratio, 
+    compute_peak_detection_performance,
+    create_perf_df,
+    change_boundary_score_threshold
+)
 
 xic_dir = p100_prm.XIC_DIR
 meta_df, trans_df = p100_prm.get_metadata_df()

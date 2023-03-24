@@ -6,35 +6,6 @@ import pandas as pd
 from deepmrm.constant import RT_KEY, TIME_KEY, XIC_KEY
 
 
-class TransitionShuffle(torch.nn.Module):
-    """ shuffle the orders of transition pairs
-        Doesn't change quality and ratio labels
-    """
-    def __init__(self, p=0.5):
-        super().__init__()
-        self.p = p
-
-
-    def forward(self, sample):
-
-        if sample['replicate_id'] == 0:
-            return sample
-
-        if torch.rand(1) > self.p:
-            return sample
-
-        xic = sample[XIC_KEY]
-        # number of pairs of light and heavy peptides
-        num_transition_pairs = xic.shape[1]
-        if num_transition_pairs < 2:
-            return sample
-
-        idx = np.random.permutation(list(range(num_transition_pairs)))
-        xic_shuffled = xic[:, idx, :]
-        sample[XIC_KEY] = xic_shuffled
-
-        return sample        
-
 
 class TransitionRankShuffle(torch.nn.Module):
     """

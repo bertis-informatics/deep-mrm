@@ -14,7 +14,11 @@ from deepmrm.data_prep import get_metadata_df
 from deepmrm.model.boundary_detect import BoundaryDetector
 from deepmrm.transform.make_input import MakeTagets, MakeInput
 from deepmrm.train.trainer import BaseTrainer
-from deepmrm.transform.augment import RandomResizedCrop, TransitionJitter
+from deepmrm.transform.augment import (
+    RandomResizedCrop, 
+    MultiplicativeJitter,
+    #TransitionJitter,
+)
 from deepmrm.data import obj_detection_collate_fn
 
 logger = get_logger('DeepMRM')
@@ -28,11 +32,12 @@ task = ObjectDetectionTask('peak_detect', box_dim=1, num_classes=2)
 transform = T.Compose([
                 MakeInput(force_resampling=True, use_rt=False),
                 MakeTagets()
-            ])
+    ])
 
 aug_transform = T.Compose([
         MakeInput(force_resampling=True, use_rt=False),
-        TransitionJitter(p=0.25),
+        # TransitionJitter(p=0.25),
+        MultiplicativeJitter(p=0.25, noise_scale_ub=1e-3, noise_scale_lb=1e-4),
         RandomResizedCrop(p=0.7),
         MakeTagets()
     ])
@@ -46,7 +51,7 @@ def run_train(
     num_epochs = 100,
     split_ratio=(.8, .1, .1),
     use_scl=False,
-    backbone='resnet34',
+    backbone='resnet18',
     num_anchors=1):
 
     logger.info(f'Start loading dataset')
@@ -93,12 +98,15 @@ def run_train(
     trainer.train(num_epochs=num_epochs, batch_size=batch_size)
 
 
-
 if __name__ == "__main__":
-    
-    run_train("DeepMRM_BD_L1", backbone='resnet18_light', augmentation=True)
-
-    run_train("DeepMRM_BD_L2", backbone='resnet18', augmentation=True)
+    # run_train("DeepMRM_BD_L1", backbone='resnet18_light', augmentation=True)
+    run_train(
+        "DeepMRM_BD", 
+        backbone='resnet18', 
+        augmentation=True,
+        batch_size = 512,
+        num_epochs = 100,
+    )
 
     # run_train(
     #     "DeepMRM_Model_SCL",

@@ -118,8 +118,8 @@ xic_stacked = np.stack([
 self = model
 
 # prediction step
-xic_tensors = self.batch_xics(self.device, xic_stacked)
-model_outputs = model(xic_tensors)
+xics = self.batch_xics(self.device, xic_stacked)
+model_outputs = model(xics.tensors)
 
 for trans_tup, score in zip(indexes, model_outputs.sigmoid()):
     s = score.item()

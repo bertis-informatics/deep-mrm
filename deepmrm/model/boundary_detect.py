@@ -36,12 +36,10 @@ class BoundaryDetector(torch.nn.Module):
         num_classes = task.num_classes
         extra_blocks = LastLevelMaxPool()
 
-        assert backbone in ['resnet18_light', 'resnet18', 'resnet34', 'resnet50']
+        assert backbone in ['resnet18', 'resnet34', 'resnet50']
         self.backbone_name = backbone
 
-        if backbone == 'resnet18_light':
-            backbone = ResNet1x3([1, 1, 1, 1], block=BasicBlock1x3)
-        elif backbone == 'resnet18':
+        if backbone == 'resnet18':
             backbone = ResNet1x3([2, 2, 2, 2], block=BasicBlock1x3)
         elif backbone == 'resnet34':
             backbone = ResNet1x3([3, 4, 6, 3], block=BasicBlock1x3)
@@ -94,11 +92,18 @@ class BoundaryDetector(torch.nn.Module):
     def forward(self, batched_samples):
         # list of [Pairs, Channels, Length]
         xic_list = batched_samples[XIC_KEY] 
-        xic_tensors = self.batch_xics(self.device, xic_list)
-        detections = self.detector.predict(xic_tensors)
+        batched_xics = self.batch_xics(self.device, xic_list)
+        detections = self.detector.predict(batched_xics)
         
-        return detections
+        # additional filters
+        # exclude large boundary enclosing more confident short boundary
+        # detections = self.postprocess_detections(detections)
 
+        return detections
+    
+    def postprocess_detections(self, detections):
+        pass
+    
     def _convert_model_output(self, detections):
         # detections: List[Dict[str, Tensor]]
         prediction = detections[0]
@@ -113,8 +118,9 @@ class BoundaryDetector(torch.nn.Module):
         
         xic_list = batched_samples[XIC_KEY] 
         targets = batched_samples[TARGET_KEY]
-        xic_tensors, targets = self.batch_xics(self.device, xic_list, targets)
-        loss_dict = self.detector.compute_loss(xic_tensors, targets)
+        xics, targets = self.batch_xics(self.device, xic_list, targets)
+
+        loss_dict = self.detector.compute_loss(xics.tensors, targets)
         loss = loss_dict['classification'] + loss_dict['bbox_regression']
         
         return loss
