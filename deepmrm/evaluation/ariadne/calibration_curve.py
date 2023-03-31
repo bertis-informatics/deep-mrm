@@ -21,6 +21,8 @@ def generate_calibration_curves(
         (smooth_quant_df[estimated_ratio_column] > 0)
     if Q_value_cutoff is not None:
         m &= (smooth_quant_df['annotation_QValue'] < Q_value_cutoff)
+    elif 'DeepMRM' in estimated_ratio_column:
+        m &= (smooth_quant_df['DeepMRM_QS_score'] > 0)
 
     for pep_id, sub_df  in smooth_quant_df[m].groupby(peptide_id_col):
         y_true = sub_df.loc[:, [target_abundance_column]]

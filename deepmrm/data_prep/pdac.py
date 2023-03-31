@@ -211,7 +211,6 @@ def _create_label_df():
             dfs.append(df)
 
     label_df = pd.concat(dfs, ignore_index=True)
-
     return label_df
 
 def get_label_df():
@@ -248,9 +247,33 @@ def get_label_df():
     #                 for k in range(3)], dtype=np.int32)
     
     # label_df['manual_peak_quality'] = label_df.apply(_make_manual_peak_quality, axis=1)
+    # label_df['manual_boundary'] = 1
+    # m = np.in1d(label_df['manual_ratio_desc'], ['no Sil peptide', 'no SIL peptide']) 
+    # label_df.loc[m, 'manual_boundary'] = 0
+    
+    label_df['manual_boundary'] = label_df['manual_ratio'].notnull().astype(np.int32)
+    
+    
+    descs = [
+            # there are actual boundaries 
+            # with inconsistent light/heavy ratios across transitions
+            'y ion transition 순서 불일치',
+            'y ion transtion 순서 불일치',
+            'y ion transition 순서불일치',
+            'ratio variation이 너무 심함', 
+            'y ion 순서 불일치',
+            'y ion transition 불일치',
+            
+            # there are boundaries only for heavy peptides 
+            'no endogenous peptide',
+            'no endogeneous peptide'
+        ]
+    m = np.in1d(label_df['manual_ratio_desc'], descs)
+    label_df.loc[m, 'manual_boundary'] = 1
     
     drop_cols = [col for col in label_df.columns if 'manual' in col and 'frag' in col]
-    drop_cols.extend(['ion_order', 'light_pmol', 'heavy_pmol', 'manual_ratio_desc'])
+    # drop_cols.extend(['ion_order', 'light_pmol', 'heavy_pmol', 'manual_ratio_desc'])
+    drop_cols.extend(['ion_order', 'light_pmol', 'heavy_pmol'])
     label_df = label_df.drop(columns=drop_cols)
 
     ms_df = get_msdata_df()

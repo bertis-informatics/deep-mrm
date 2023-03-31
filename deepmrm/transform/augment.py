@@ -55,7 +55,8 @@ class RandomResizedCrop(torch.nn.Module):
                     min_elution_period=3,
                     max_elution_period=180,
                     max_size=900,
-                    cycle_time=0.5):
+                    cycle_time=0.5,
+                    manual_bd_only=True):
     
         super().__init__()
         self.p = p
@@ -65,10 +66,11 @@ class RandomResizedCrop(torch.nn.Module):
         self.ep_min = min_elution_period
         self.ep_max = max_elution_period
         self.cycle_time = cycle_time
+        self.manual_bd_only = manual_bd_only
 
     def forward(self, sample):
 
-        if sample['manual_quality'] == 0:
+        if self.manual_bd_only and sample['manual_boundary'] == 0:
             return sample
 
         if torch.rand(1) > self.p:
@@ -233,7 +235,7 @@ class RandomRTShift(torch.nn.Module):
         self._upper = shift_scale_ub
 
     def forward(self, sample):
-
+        
         # if sample['manual_quality'] == 0:
         #     return sample
 
@@ -262,6 +264,7 @@ class RandomRTShift(torch.nn.Module):
 
         sample[XIC_KEY] = xic
         sample['manual_quality'] = 0
+        sample['manual_boundary'] = 0
         sample['manual_peak_quality'] = np.zeros(manual_peak_quality.shape)
 
         return sample        
@@ -333,16 +336,23 @@ class MultiplicativeJitter(torch.nn.Module):
 
     def __init__(self, 
                  noise_scale_ub=1e-3,
-                 noise_scale_lb=1e-4,
+                 noise_scale_lb=1e-5,
                  p=0.5):
         super().__init__()
         self.p = p
-        self._upper = np.log(noise_scale_ub)
-        self._lower = np.log(noise_scale_lb)
+        # self._upper = np.log(noise_scale_ub)
+        # self._lower = np.log(noise_scale_lb)
+        upper = np.log(noise_scale_ub)
+        lower = np.log(noise_scale_lb)
+        self._loc = (upper+lower)*0.5
+        self._scale = (upper-lower)/4
+
 
     def get_random_scale(self):
-        rd = np.random.rand()
-        rd = rd * (self._upper - self._lower) + self._lower
+        # rd = np.random.rand()
+        # rd = rd *(self._upper - self._lower) + self._lower
+        rd = np.random.normal(self._loc, self._scale)
+
         return np.exp(rd)
 
     def forward(self, sample):
@@ -387,7 +397,8 @@ class ShuffleSignals(torch.nn.Module):
         xic = sample[XIC_KEY]
         manual_peak_quality = sample['manual_peak_quality']
 
-        target_channel = np.random.choice([0, 1], p=[0.7, 0.3])
+        # target_channel = np.random.choice([0, 1], p=[0.7, 0.3])
+        target_channel = np.random.choice([0, 1])
 
         # shuffle each XIC separately
         for t in range(xic.shape[1]):
@@ -395,6 +406,50 @@ class ShuffleSignals(torch.nn.Module):
 
         sample[XIC_KEY] = xic
         sample['manual_quality'] = 0
+        sample['manual_boundary'] = 0
         sample['manual_peak_quality'] = np.zeros(manual_peak_quality.shape)
 
         return sample
+    
+
+
+class ReplicateTransitionWithNoise(torch.nn.Module):
+
+    def __init__(self, 
+                 multiplicative_noise_scale=1e-4,
+                 p=0.5):
+        super().__init__()
+        self.multiplicative_noise_scale = multiplicative_noise_scale
+        self.p = p
+
+    def forward(self, sample):
+        
+        if sample['manual_quality'] != 1:
+            return sample
+        
+        if torch.rand(1) > self.p:
+            return sample
+        
+        xic_array = sample[XIC_KEY]
+        manual_peak_quality = sample['manual_peak_quality']
+        
+        indexes = np.where(manual_peak_quality > 0)[0]
+        summed_xic = xic_array[:, indexes, :].sum(axis=1, keepdims=True)
+        scale = self.multiplicative_noise_scale * (np.random.rand() + 0.5)
+
+        # Apply transition-specific noise
+        for i in range(2):
+            xic = summed_xic[i, 0, :]
+            quantile_range = np.quantile(xic, [0.25, 0.75])
+            xic_scale = quantile_range[1] - quantile_range[0]
+            noise_data = (scale * xic) * np.random.normal(
+                                                loc=0, 
+                                                scale=xic_scale,
+                                                size=(xic_array.shape[-2:]))
+            new_xic = xic + noise_data
+            xic_array[i, :, :] = new_xic
+
+
+        sample[XIC_KEY] = xic_array
+
+        return sample           

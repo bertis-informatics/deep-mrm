@@ -4,7 +4,7 @@ import numpy as np
 from deepmrm.data_prep import pdac, scl
 from deepmrm.constant import RT_KEY
 
-def get_metadata_df(use_scl=False, only_quantifiable_peak=True):
+def get_metadata_df(use_scl=False, only_peak_boundary=False):
     label_df, pdac_xic = pdac.get_metadata_df()
 
     if use_scl:
@@ -20,8 +20,8 @@ def get_metadata_df(use_scl=False, only_quantifiable_peak=True):
         label_df[col] = label_df[col]*60
     label_df[RT_KEY] = (label_df['heavy_rt'] + label_df['light_rt'])*0.5
 
-    if only_quantifiable_peak:
-        m = label_df['manual_quality'] == 1
+    if only_peak_boundary:
+        m = label_df['manual_boundary'] == 1
         label_df = label_df[m]
 
     return label_df, pdac_xic, scl_xic

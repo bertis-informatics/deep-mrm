@@ -147,11 +147,12 @@ from deepmrm.data.transition import TransitionData
 from deepmrm.data.dataset.prm import PRMDataset
 from multiprocessing import Pool
 
-meta_df, all_trans_df = get_metadata_df()
-
-transition_data = TransitionData(all_trans_df)
+meta_df, all_trans_df = None, None
+transition_data = None
 
 def extract_xic(mzml_path):
+    global meta_df, all_trans_df
+    global transition_data
 
     tolerance = Tolerance(20, ToleranceUnit.PPM)
     # mzml_path = MZML_DIR / mzml_fname
@@ -167,6 +168,10 @@ def extract_xic(mzml_path):
     return
 
 def run_batch_xic_extraction(n_jobs=8):
+    global meta_df, all_trans_df
+    global transition_data
+    meta_df, all_trans_df = get_metadata_df()
+    transition_data = TransitionData(all_trans_df, peptide_id_col='modified_sequence')
     mzml_files = sorted(list(MZML_DIR.rglob('*.mzML')))
     with Pool(n_jobs) as p:
         p.map(extract_xic, mzml_files)

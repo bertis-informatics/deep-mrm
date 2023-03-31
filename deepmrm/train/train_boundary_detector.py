@@ -17,7 +17,6 @@ from deepmrm.train.trainer import BaseTrainer
 from deepmrm.transform.augment import (
     RandomResizedCrop, 
     MultiplicativeJitter,
-    #TransitionJitter,
 )
 from deepmrm.data import obj_detection_collate_fn
 
@@ -25,38 +24,44 @@ logger = get_logger('DeepMRM')
 num_workers = 4
 gpu_index = 0
 RANDOM_SEED = 2022
-
 task = ObjectDetectionTask('peak_detect', box_dim=1, num_classes=2)
 
 # Define transforms
 transform = T.Compose([
                 MakeInput(force_resampling=True, use_rt=False),
-                MakeTagets()
-    ])
+                MakeTagets()])
 
 aug_transform = T.Compose([
-        MakeInput(force_resampling=True, use_rt=False),
-        # TransitionJitter(p=0.25),
-        MultiplicativeJitter(p=0.25, noise_scale_ub=1e-3, noise_scale_lb=1e-4),
+        MakeInput(
+            force_resampling=True, 
+            use_rt=False),
+        MultiplicativeJitter(
+            p=0.25, 
+            noise_scale_ub=1e-3, 
+            noise_scale_lb=1e-4),
         RandomResizedCrop(p=0.7),
         MakeTagets()
     ])
 
 
+
 def run_train(
     model_name, 
-    augmentation, 
+    #augmentation, 
+    aug_transform=None,
     returned_layers=[3, 4], 
     batch_size = 512, 
     num_epochs = 100,
     split_ratio=(.8, .1, .1),
     use_scl=False,
     backbone='resnet18',
+    only_peak_boundary=True,
     num_anchors=1):
 
     logger.info(f'Start loading dataset')
-    label_df, pdac_xic, scl_xic = get_metadata_df(use_scl=use_scl)
+    label_df, pdac_xic, scl_xic = get_metadata_df(use_scl=use_scl, only_peak_boundary=only_peak_boundary)
     logger.info(f'Complete loading dataset')
+    logger.info(f'#samples: {label_df.shape[0]}, #boundaries: {label_df["manual_boundary"].sum()}')
 
     ds = DeepMrmDataset(
                 label_df,
@@ -64,8 +69,6 @@ def run_train(
                 scl_xic,
                 transform=transform)
     
-    logger.info(f'The size of training-set: {len(ds)}')
-
     data_mgr = DataManager(
                 task, 
                 ds, 
@@ -76,14 +79,14 @@ def run_train(
 
     data_mgr.split()
 
-    if augmentation:
+    if aug_transform is not None:
         data_mgr.set_transform(aug_transform, partition_type=PartitionType.TRAIN)
 
     trainer = BaseTrainer(data_mgr, 
-                        model_dir, 
-                        logger, 
-                        run_copy_to_device=False, 
-                        gpu_index=gpu_index)
+                          model_dir, 
+                          logger, 
+                          run_copy_to_device=False, 
+                          gpu_index=gpu_index)
 
     model = BoundaryDetector(
                 model_name, task, num_anchors=num_anchors, 
@@ -99,20 +102,14 @@ def run_train(
 
 
 if __name__ == "__main__":
-    # run_train("DeepMRM_BD_L1", backbone='resnet18_light', augmentation=True)
+    
     run_train(
-        "DeepMRM_BD", 
+        "DeepMRM_BD_NoAug",
+        #aug_transform=aug_transform,
+        aug_transform=None,
         backbone='resnet18', 
-        augmentation=True,
         batch_size = 512,
         num_epochs = 100,
+        only_peak_boundary=False,
     )
-
-    # run_train(
-    #     "DeepMRM_Model_SCL",
-    #     use_scl=True, 
-    #     augmentation=True, 
-    #     backbone='resnet34',
-    #     num_epochs=200, 
-    #     # split_ratio=(0.85, 0.15, 0.0),
-    # )
+    

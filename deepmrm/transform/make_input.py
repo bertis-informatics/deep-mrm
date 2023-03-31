@@ -135,9 +135,8 @@ class TransitionDuplicate(torch.nn.Module):
 
 class SelectSegment(torch.nn.Module):
 
-    def __init__(self, max_num_duplication=8):
+    def __init__(self):
         super().__init__()
-        self.max_num_duplication = max_num_duplication
 
     def forward(self, sample):
 

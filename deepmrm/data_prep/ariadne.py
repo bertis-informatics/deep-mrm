@@ -65,7 +65,7 @@ def get_skyline_result_df(dataset):
     cols = ['File Name', 'peptide_id', 'Min Start Time', 'Max End Time']
     df = df.merge(bd_df[cols], on=['File Name', 'peptide_id'], how='left')
     assert df['Min Start Time'].isnull().sum() == 0
-    assert df['Min End Time'].isnull().sum() == 0
+    assert df['Max End Time'].isnull().sum() == 0
 
     def extract_heavy_amount(replicate_name):
         s = replicate_name.split('_')

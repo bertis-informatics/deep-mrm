@@ -97,18 +97,6 @@ class ResNet1x3(ResNet):
         self.base_width = 64
         planes = [self.inplanes*(2**i) for i in range(len(layers))]
 
-        # if change_conv1:
-        #     pre_inplanes = self.inplanes // 2
-        #     self.conv1 = nn.Sequential(
-        #                     nn.Conv2d(2, pre_inplanes, kernel_size=(1, 7), 
-        #                             stride=(1, 1), padding=(0, 3), 
-        #                             groups=2, bias=False),
-        #                     self._norm_layer(pre_inplanes),
-        #                     nn.ReLU(inplace=True),
-        #                     nn.Conv2d(pre_inplanes, self.inplanes, kernel_size=(3, 7), 
-        #                             stride=(1, 2), padding=(0, 3), 
-        #                             groups=2, bias=False))
-        # else:
         self.conv1 = nn.Conv2d(2, 
                                self.inplanes, 
                                kernel_size=(conv1_height, 7), 
@@ -120,8 +108,11 @@ class ResNet1x3(ResNet):
         self.bn1 = self._norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.Sequential(
-                        nn.MaxPool2d(kernel_size=(1, 3), stride=(1, 2), padding=(0, 1)),
-                        nn.AdaptiveAvgPool2d((1, None)))
+                            nn.MaxPool2d(
+                                    kernel_size=(1, 3), 
+                                    stride=(1, 2), 
+                                    padding=(0, 1)),
+                            nn.AdaptiveAvgPool2d((1, None)))
 
         self.layer1 = self._make_layer(block, planes[0], layers[0])
         self.layer2 = self._make_layer(block, planes[1], layers[1], stride=2, dilate=replace_stride_with_dilation[0])

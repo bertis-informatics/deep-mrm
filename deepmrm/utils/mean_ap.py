@@ -37,7 +37,7 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
     def compute(self) -> dict:
         """Computes metric."""
         classes = self._get_classes()
-        precisions, recalls, ious = self._calculate(classes)
+        precisions, recalls, ious, recall_raw = self._calculate(classes)
         map_val, mar_val = self._summarize_results(precisions, recalls)
 
         # if class mode is enabled, evaluate metrics per class
@@ -59,9 +59,11 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
             # mar_max_dets_per_class_values = torch.tensor(mar_max_dets_per_class_list, dtype=torch.float)
 
         precision_dict = dict()
+        recall_dict = dict()
         for idx_max_det, max_det in enumerate(self.max_detection_thresholds):
             for idx_iou, th in enumerate(self.iou_thresholds):
                 precision_dict[f'{int(th*100)}_det{max_det}'] = precisions[idx_iou, :, 0, 0, idx_max_det]
+                recall_dict[f'{int(th*100)}_det{max_det}'] = recall_raw[idx_iou, :, 0, 0, idx_max_det]
 
         metrics = COCOMetricResults()
         metrics.update(map_val)
@@ -70,9 +72,9 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
         # these are not necessary
         # metrics.map_per_class = map_per_class_values
         # metrics[f"mar_{self.max_detection_thresholds[-1]}_per_class"] = mar_max_dets_per_class_values
-        
         metrics['ious'] = ious
         metrics['precisions'] = precision_dict
+        metrics['recalls'] = recall_dict
 
         return metrics
 
@@ -190,6 +192,7 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
         precision = -torch.ones((nb_iou_thrs, nb_rec_thrs, nb_classes, nb_bbox_areas, nb_max_det_thrs))
         recall = -torch.ones((nb_iou_thrs, nb_classes, nb_bbox_areas, nb_max_det_thrs))
         scores = -torch.ones((nb_iou_thrs, nb_rec_thrs, nb_classes, nb_bbox_areas, nb_max_det_thrs))
+        recall_raw = -torch.ones((nb_iou_thrs, nb_rec_thrs, nb_classes, nb_bbox_areas, nb_max_det_thrs))
 
         # move tensors if necessary
         rec_thresholds_tensor = torch.tensor(self.rec_thresholds)
@@ -198,7 +201,8 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
         for idx_cls, _ in enumerate(class_ids):
             for idx_bbox_area, _ in enumerate(self.bbox_area_ranges):
                 for idx_max_det_thrs, max_det in enumerate(self.max_detection_thresholds):
-                    recall, precision, scores = self.__calculate_recall_precision_scores(
+                    recall_raw, recall, precision, scores = self.__calculate_recall_precision_scores(
+                        recall_raw,
                         recall,
                         precision,
                         scores,
@@ -212,12 +216,13 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
                         nb_bbox_areas=nb_bbox_areas,
                     )
 
-        return precision, recall, ious    
+        return precision, recall, ious, recall_raw
 
     
 
     @staticmethod
     def __calculate_recall_precision_scores(
+        recall_raw: Tensor,
         recall: Tensor,
         precision: Tensor,
         scores: Tensor,
@@ -289,6 +294,7 @@ class MeanAveragePrecisionRecall(MeanAveragePrecision):
             # precision[idx, :, idx_cls, idx_bbox_area, idx_max_det_thrs] = prec
             # scores[idx, :, idx_cls, idx_bbox_area, idx_max_det_thrs] = score
             precision[idx, :num_inds, idx_cls, idx_bbox_area, idx_max_det_thrs] = pr[inds]
+            recall_raw[idx, :num_inds, idx_cls, idx_bbox_area, idx_max_det_thrs] = rc[inds]
             scores[idx, :num_inds, idx_cls, idx_bbox_area, idx_max_det_thrs] = det_scores_sorted[inds]
 
-        return recall, precision, scores    
+        return recall_raw, recall, precision, scores    

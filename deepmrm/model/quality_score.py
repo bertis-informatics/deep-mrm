@@ -66,13 +66,16 @@ class QualityScorer(ResNet1x3):
     
     def score_peak_group(self, xic_array, peak_boundary, max_candidates=6):
         
-        num_transitions = xic_array.shape[1]
+        num_transitions, num_points = xic_array.shape[-2:]
         if num_transitions < 2:
             # there is only one transition. Can't scoring it
             return {idx: 0 for idx in range(num_transitions)}
 
-        st_idx, ed_idx = np.around(peak_boundary).astype(int)
-        xic_seg_array = xic_array[:, :, st_idx:ed_idx]
+        # elution_period = peak_boundary[1] - peak_boundary[0]
+        # peak_boundary[0] -= elution_period
+        # peak_boundary[1] += elution_period
+        peak_boundary = peak_boundary.astype(np.int32).clip(min=0, max=num_points)
+        xic_seg_array = xic_array[:, :, peak_boundary[0]:peak_boundary[1]]
 
         if num_transitions > max_candidates:
             ct_idx_ = int( np.median(xic_seg_array[1, :, :].argmax(axis=1)) )
@@ -93,7 +96,6 @@ class QualityScorer(ResNet1x3):
         rep_idx = np.unique([ix for s, ix in zip(scores, indexes) if s > 0.5])
         if len(rep_idx) > 0:
             # found quantifiable XIC pair with high confidence
-            # xic_rep = xic_tensors[m.flatten(), :, :, :].sum(axis=1, keepdim=True).cpu().numpy()
             xic_rep = xic_seg_array[:, rep_idx, :].sum(axis=1, keepdims=True)
         else:
             xic_rep = xic_seg_array.sum(axis=1, keepdims=True)
@@ -107,9 +109,12 @@ class QualityScorer(ResNet1x3):
         # from deepmrm.utils.plot import plot_heavy_light_pair        
         # from matplotlib import pyplot as plt
         # plt.figure()
-        # plot_heavy_light_pair(np.arange(xic_input.shape[-1]), xic_tensors2[2, :].cpu().numpy())
+        # ix = rep_idx
+        # plot_heavy_light_pair(np.arange(xic_array.shape[-1]), xic_array[:,ix,:], pred_bd=peak_boundary)
         # #plot_heavy_light_pair(np.arange(len(time)), xic[:, [0, 2], :], manual_bd=target_boxes, pred_bd=pred_boxes)
-        # plt.savefig('./temp/temp.jpg')        
+        # plt.xlim([st_idx-40, ed_idx+40])
+        # plt.savefig('./temp/temp.jpg')
+
         logits = self(xic_tensors2)
         scores = logits.sigmoid()
         predictions = scores.squeeze().cpu().numpy()
@@ -144,9 +149,7 @@ class QualityScorer(ResNet1x3):
                                 for peak_boundary in bd_output_df.loc[idx, 'boxes']
                         ], dtype=np.float32)
                     )
-        
         bd_output_df['peak_quality'] = peak_quality_results
-
         return bd_output_df
 
 

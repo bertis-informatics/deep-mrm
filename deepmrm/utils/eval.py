@@ -19,7 +19,7 @@ def get_ious_from_output_df(row):
         torch.from_numpy(row['target_boxes']), 
         torch.from_numpy(row['boxes']))
     
-    return match_quality_matrix.numpy()
+    return match_quality_matrix.numpy().flatten()
 
 def compute_peak_detection_performance(
                 output_df, 
@@ -69,9 +69,7 @@ def compute_peak_detection_performance(
                 'labels': torch.from_numpy(target_labels)
             })
     metric.update(preds, target)
-    
     metric_results = metric.compute()
-    metric_results['recall_thresholds'] = np.array(metric.rec_thresholds, dtype=np.float32)
     metric_results['iou_thresholds'] = iou_thresholds
 
     # update output_df with ious
@@ -97,7 +95,7 @@ def select_xic(peak_quality, quality_threshold):
 def calculate_area_ratio(
                     test_ds, 
                     output_df, 
-                    iou_threshold=0.5,
+                    iou_threshold=0.3,
                     xic_score_th=0.5):
 
     """ Estimate the light to heavy ratio for the best matching peak
@@ -106,13 +104,20 @@ def calculate_area_ratio(
     auc_results = dict()
     for idx, row in enumerate(output_df.iterrows()):
         index, row = row
-        target_boxes = row['target_boxes'][0]
-        target_labels = row['target_labels'][0]
+        target_boxes = row['target_boxes']
+        target_labels = row['target_labels']
+
+        if len(target_boxes) < 1:
+            continue
+        
+        target_box = target_boxes[0]
+        target_label = target_labels[0]
+
         pred_boxes = row['boxes']
-        ious = row['ious']
+        ious = row['ious'].flatten()
         jj = np.where(ious > iou_threshold)[0]
 
-        if (target_labels < 1) or (len(jj) < 1):
+        if (target_label < 1) or (len(jj) < 1):
             continue
 
         j = jj[0] # best scoring peak
@@ -131,7 +136,7 @@ def calculate_area_ratio(
         # plt.savefig('./temp/temp.jpg')
         
         # convert to integer
-        target_boxes = target_boxes.astype(int)
+        target_box = target_box.astype(int)
         pred_boxes = pred_boxes.astype(int)
 
         manually_selected_xic = np.where(sample['manual_peak_quality'] > 0)[0] \
@@ -148,7 +153,7 @@ def calculate_area_ratio(
         for i, k in enumerate(['light', 'heavy']):
             summed_xic = xic[i, manually_selected_xic, :].sum(axis=0)
             
-            peak_area, background = calculate_peak_area(time, summed_xic, target_boxes[0], target_boxes[1])
+            peak_area, background = calculate_peak_area(time, summed_xic, target_box[0], target_box[1])
             ret[f'manual_{k}_area'] = peak_area
             ret[f'manual_{k}_background'] = background
             
@@ -165,6 +170,12 @@ def calculate_area_ratio(
                 peak_area, background = calculate_peak_area(time, summed_xic, pred_boxes[0], pred_boxes[1])
             ret[f'pred0_{k}_area'] = peak_area
             ret[f'pred0_{k}_background'] = background
+
+        if (ret[f'pred_heavy_area'] == np.nan) or (ret[f'pred_heavy_area'] < 1):
+            ret[f'pred_heavy_area'] = ret[f'pred0_heavy_area']
+            ret[f'pred_light_area'] = ret[f'pred0_light_area']
+            ret[f'pred_heavy_background'] = ret[f'pred0_heavy_background']
+            ret[f'pred_light_background'] = ret[f'pred0_light_background']
 
         auc_results[index] = ret
 

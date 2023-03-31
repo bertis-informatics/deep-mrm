@@ -1,3 +1,6 @@
+from pathlib import Path
+from deepmrm.utils.plot import plot_heavy_light_pair
+
 import pandas as pd
 import numpy as np
 import torch
@@ -22,8 +25,8 @@ from deepmrm.evaluation.ariadne import (
 
 reports_dir = private_project_dir / 'reports'
 fig_dir = reports_dir / 'figures'
-batch_size = 64
-num_workers = 4
+batch_size = 1
+num_workers = 1
 
 dataset_name = 'Ariadne'
 peptide_id_col = ariadne.peptide_id_col
@@ -48,10 +51,11 @@ batch_size = 64
 num_workers = 4
 mz_tol = Tolerance(0.5, ToleranceUnit.MZ)
 transform = T.Compose([MakeInput()])
-transition_data = TransitionData(trans_df, peptide_id_col=peptide_id_col)
+transition_data = TransitionData(
+                        trans_df, 
+                        peptide_id_col=peptide_id_col)
 
 # save_path.unlink()
-
 if save_path.exists():
     ret_df = pd.read_pickle(save_path)
 else:
@@ -170,14 +174,13 @@ for dataset in ariadne.DATASETS[:2]:
 
         corr_df = pd.DataFrame(corr_ret, columns=['peptide_id', 'PCC', 'SPC'])
         result_tables[dataset][method] = corr_df
+
 #######################################################################################
-
-
 #### Compute performance metrics 
 BD_SCORE_TH = 0.05
-QS_SCORE_TH = 0.1
+QS_SCORE_TH = 0.01
 
-dataset = ariadne.DATASETS[0]
+dataset = ariadne.DATASETS[1]
 quant_df = ariadne_ret[dataset]
 corr_dfs = result_tables[dataset]
 perf_stats = dict()
@@ -188,6 +191,7 @@ for method in methods:
     if method == 'DeepMRM':
         m &= (quant_df['DeepMRM_BD_score'] > BD_SCORE_TH)
         m &= (quant_df['DeepMRM_QS_score'] > QS_SCORE_TH)
+
     y_true = quant_df.loc[m, 'Heavy peptide abundance (fmole)']
     y_pred = quant_df.loc[m, f'{method} abundance prediction']
     ape = (y_true - y_pred).abs()/y_true
@@ -205,6 +209,9 @@ for method in methods:
 perf_stat_df = pd.DataFrame.from_dict(perf_stats, orient='index')
 print(perf_stat_df)
 
+# m = quant_df['DeepMRM_QS_score'] < 0.01
+# quant_df.loc[m, ['DeepMRM_BD_score', 'DeepMRM_QS_score', 'peak_quality']]
+
 #### DEBUG ####
 # cols = [
 #     peptide_id_col,
@@ -218,8 +225,6 @@ print(perf_stat_df)
 #### DEBUG ####
 
 ## quantification score
-
-
 ####################################################################
 # Examples of DeepMRM, Skyline
 # Why Skyline miss some detections, and how DeepMRM rescure them. 
@@ -228,13 +233,104 @@ print(perf_stat_df)
 # Please show more instances for Fig. 1b-d and Fig. 2 
 # other than just displaying the numbers and box plots.
 
-# 1) Good peaks that are missed by Skyline but detected by DeepMRM
+dataset = ariadne.DATASETS[1]
+quant_df = ariadne_ret[dataset]
+corr_dfs = result_tables[dataset]
+y_true = quant_df['Heavy peptide abundance (fmole)']
+y_sky = quant_df['Skyline FDR 5% abundance prediction']
+y_deep = quant_df[f'DeepMRM abundance prediction']
 
+
+# 1) Good peaks that are missed by Skyline but detected by DeepMRM
+mask = y_sky.isnull()
+mask &= (quant_df['DeepMRM_BD_score'] > BD_SCORE_TH)
+mask &= (quant_df['DeepMRM_QS_score'] > QS_SCORE_TH)
+indexes = quant_df.index[mask]
+# ape = (y_true[mask] - y_deep[mask]).abs()/y_true[mask]
+# aape = np.arctan(ape)
+# np.mean(ape)
+# np.median(ape)
+# np.mean( np.arctan(aape) )
 
 # 2) Poor peaks that are detected by Skyline, but filtered by DeepMRM
+mask = y_sky.notnull()
+mask2 = (quant_df['DeepMRM_BD_score'] < BD_SCORE_TH)
+mask2 |= (quant_df['DeepMRM_QS_score'] < QS_SCORE_TH)
+mask &= mask2
+indexes = quant_df.index[mask]
+
+ape = (y_true[mask] - y_sky[mask]).abs()/y_true[mask]
+aape = np.arctan(ape)
+np.mean(ape)
+np.median(ape)
+np.mean( np.arctan(aape) )
 
 
 # 3) Detected by Both, but better quantified by DeepMRM
+mask = y_sky.notnull()
+mask &= (quant_df['DeepMRM_BD_score'] > BD_SCORE_TH)
+mask &= (quant_df['DeepMRM_QS_score'] > QS_SCORE_TH)
+
+ape_sky = (y_true[mask] - y_sky[mask]).abs()/y_true[mask]
+ape_deep = (y_true[mask] - y_deep[mask]).abs()/y_true[mask]
+
+mask_ = (ape_sky > 0.3) & (ape_deep < 0.2)
+indexes = quant_df.index[mask][mask_]
+indexes
+
+# # 4) Detected by Skyline, but missed by DeepMRM
+# mask = y_sky.notnull()
+# mask &= (quant_df['DeepMRM_BD_score'] > 0.8)
+# mask &= (quant_df['DeepMRM_QS_score'] < QS_SCORE_TH)
+# # quant_df[mask]
+# indexes = quant_df.index[mask]
+
+idx = np.random.choice(indexes, size=1)[0]
+
+row = quant_df.loc[idx, :]
+mzml_path = Path(f'/home/jungkap/msdata/Ariadne/mzML/{row["File Name"]}.mzML')
+pep_id = row[peptide_id_col]
+ds = MRMDataset(
+            mzml_path,
+            transition_data,
+            transform=transform)
+
+ds.extract_data(tolerance=mz_tol)
+m = np.in1d(ds.metadata_df[peptide_id_col], [pep_id])
+ds.metadata_df = ds.metadata_df[m]
+sample = ds[0]
+
+xic = sample['XIC']
+time = sample['TIME']
+if len(row['boxes']) > 0:
+    deep_bd = row['boxes'][0] / 60
+else:
+    deep_bd = None
+
+# deep_bd = None
+# deep_bd = np.interp(pred, np.arange(len(time)), time/60)
+sky_bd = row['Min Start Time'], row['Max End Time']
+# row['Heavy peptide abundance (fmole)']
+plt.figure()
+fig, axs = plot_heavy_light_pair(
+                time/60, xic[[1, 0], :, :], 
+                manual_bd=sky_bd, 
+                pred_bd=deep_bd
+            )
+# axs[0].set_title(f'File Name: {mzml_path.stem}\nPeptide: {pep_id}')
+plt.xlim([sky_bd[0]-1.0, sky_bd[1]+1.0])
+# plt.xlim([deep_bd[0]-1, deep_bd[1]+1])
+plt.savefig('./temp/ariadne_example.jpg')
+
+d = {
+    'File Name' : row['File Name'],
+    'Peptide ID': row['Peptide Sequence'],
+    'Heavy peptide abundance': row['Heavy peptide abundance (fmole)'],
+    'Estimated abundance by Skyline': row['Skyline default abundance prediction'],
+    'Estimated abundance by DeepMRM': row['DeepMRM abundance prediction'],
+}
+
+pd.DataFrame.from_dict(d, orient='index')
 
 
 
@@ -243,7 +339,8 @@ print(perf_stat_df)
 
 #### Create boxplots
 datasets = ariadne.DATASETS[:2]
-fig, axs = plt.subplots(len(datasets), 3, figsize=(17, 13))
+#fig, axs = plt.subplots(len(datasets), 3, figsize=(17, 13))
+fig, axs = plt.subplots(len(datasets), 3, figsize=(15, 12))
 for i, dataset in enumerate(datasets):
     quant_df = ariadne_ret[dataset]
 
@@ -289,11 +386,11 @@ for ax in axs.flat:
     x_axis = ax.get_xaxis()
     y_axis = ax.get_yaxis()
     for label in (ax.get_xticklabels() + ax.get_yticklabels()):
-        label.set_fontsize(13)
+        label.set_fontsize(15)
     y_label = y_axis.get_label()
     x_label = x_axis.get_label()
-    x_label.set_fontsize(16)
-    y_label.set_fontsize(16)
+    x_label.set_fontsize(18)
+    y_label.set_fontsize(18)
     x_label.set_visible(ax.is_last_row())
     y_label.set_visible(ax.is_first_col())
 
@@ -304,7 +401,8 @@ plt.savefig(fig_dir / 'ariadne_boxplot.jpg')
 
 
 ##################### accuracy plot ############################
-fig, axs = plt.subplots(len(datasets), 3, figsize=(17, 14))
+#fig, axs = plt.subplots(len(datasets), 3, figsize=(17, 13))
+fig, axs = plt.subplots(len(datasets), 3, figsize=(15, 12))
 for i, dataset in enumerate(datasets):
     quant_df = ariadne_ret[dataset]
     y_true = quant_df['Heavy peptide abundance (fmole)']
@@ -330,7 +428,7 @@ for i, dataset in enumerate(datasets):
         x_labels = [float(x.get_text()) for x in ax.xaxis.get_majorticklabels()]
         ax.set_xticklabels(list(map(lambda x : x if x < 1 else int(x), x_labels)))
         ax.set_title(f'{method}', fontsize=17)
-        ax.set_ylim([0, 1000])
+        ax.set_ylim([0, 800])
 
 for ax in axs.flat:
     ax.set(
@@ -342,11 +440,11 @@ for ax in axs.flat:
     x_axis = ax.get_xaxis()
     y_axis = ax.get_yaxis()
     for label in (ax.get_xticklabels() + ax.get_yticklabels()):
-        label.set_fontsize(13)
+        label.set_fontsize(15)
     y_label = y_axis.get_label()
     x_label = x_axis.get_label()
-    x_label.set_fontsize(15)
-    y_label.set_fontsize(15)
+    x_label.set_fontsize(18)
+    y_label.set_fontsize(18)
     x_label.set_visible(ax.is_last_row())
     y_label.set_visible(ax.is_first_col())
 

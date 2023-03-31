@@ -11,7 +11,6 @@ from deepmrm.utils.eval import (
     calculate_area_ratio, 
     compute_peak_detection_performance,
     create_perf_df,
-    change_boundary_score_threshold
 )
 from deepmrm.data import obj_detection_collate_fn
 from deepmrm.train.train_boundary_detector import RANDOM_SEED, task, transform
@@ -24,7 +23,7 @@ num_workers = 8
 dataset_name = 'PDAC'
 
 save_path = reports_dir/f'{dataset_name}_output_df.pkl'
-label_df, pdac_chrom_df, scl_chrom_df = get_metadata_df(use_scl=False, only_quantifiable_peak=True)
+label_df, pdac_chrom_df, scl_chrom_df = get_metadata_df(use_scl=False)
 
 ds = DeepMrmDataset(
             label_df, 
@@ -52,9 +51,10 @@ else:
     output_df = pd.read_pickle(save_path)
 
 iou_thresholds = list(np.arange(1, 10)*0.1)
-new_output_df = change_boundary_score_threshold(output_df, score_th=0.05)
+
+
 metric_results, output_df = compute_peak_detection_performance(
-                    new_output_df, 
+                    output_df, 
                     max_detection_thresholds=[1, 3],
                     iou_thresholds=iou_thresholds)
 
@@ -62,19 +62,45 @@ metric_results, output_df = compute_peak_detection_performance(
 perf_df = create_perf_df(metric_results)
 perf_df
 
-# joblib.dump((output_df, map_result), save_path)
+# precisions = metric_results['precisions']['30_det1']
+# recalls = metric_results['recalls']['30_det1']
+# m = recalls > -1
+# from matplotlib import pyplot as plt
+# plt.figure()
+# plt.rcParams.update({'font.size': 13})
+# plt.plot(recalls[m], precisions[m])
+# plt.xlabel('Recall')
+# plt.ylabel('Precision')
+# plt.savefig(reports_dir / f'figures/{dataset_name}_pr_curve.jpg')
+
 
 
 #####################################################################
 ###### AR, AP metrics at different IoUs
 test_ds = testset_loader.dataset
-xic_score_th = 0.5
+iou_threshold = 0.3
 
 # Quantification performance 
-quant_df = calculate_area_ratio(test_ds, output_df, iou_threshold=0.5, xic_score_th=0.5)
+quant_df = calculate_area_ratio(
+                test_ds, 
+                output_df, 
+                iou_threshold=iou_threshold, 
+                xic_score_th=0.5)
+cols = [
+        'selected_transition', 'quality_score', 
+        'manual_ratio', 'pred_ratio', 'pred0_ratio'
+    ]
+output_df = output_df.drop(columns=['manual_ratio'])
+output_df = output_df.join(quant_df[cols], how='left')
+
+# import joblib
+# joblib.dump((output_df, metric_results), save_path)
 
 y_true = quant_df.loc[:, 'manual_ratio'] 
 y_pred = quant_df.loc[:, 'pred_ratio'] 
+m = y_true.notnull()
+y_true = y_true[m]
+y_pred = y_pred[m]
 
 quant_df['APE'] = np.abs(y_true - y_pred)/y_true
 quant_df['AAPE'] = np.arctan(quant_df['APE'])
@@ -90,18 +116,20 @@ print(ret)
 pd.DataFrame.from_dict(ret, orient='index').T
 
 
+# saving for scatter plot
+save_path = reports_dir / f'{dataset_name}_ratio_df.pkl'
+y_true.to_frame().join(y_pred).to_pickle(save_path)
 
-# for th in iou_thresholds:
-#     # m = (quant_df['iou'] >= th) & (quant_df['iou'] < th+0.1)
-#     m = (quant_df['iou'] > th)
-#     maape = quant_df.loc[m, 'AAPE'].mean()
-#     mape = quant_df.loc[m, 'APE'].mean()
-#     pcc = pearsonr(y_true[m], y_pred[m])[0]
-#     spc = spearmanr(y_true[m], y_pred[m])[0]
-#     perf_ret['MAPE'].append(mape)
-#     perf_ret['MAAPE'].append(maape)
-#     perf_ret['PCC'].append(pcc)
-#     perf_ret['SPC'].append(spc)
-# perf_df
+
+# save for PR-curve
+pr_df = pd.DataFrame.from_dict({
+            'precision-det1': metric_results['precisions']['30_det1'].numpy(),
+            'recalls-det1': metric_results['recalls']['30_det1'].numpy(),
+            'precision-det3': metric_results['precisions']['30_det3'].numpy(),
+            'recalls-det3': metric_results['recalls']['30_det3'].numpy(),            
+        })
+save_path = reports_dir / f'{dataset_name}_pr_df.pkl'
+pr_df.to_pickle(save_path)
+
            
 del label_df, pdac_chrom_df, scl_chrom_df

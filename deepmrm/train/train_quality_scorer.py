@@ -18,7 +18,7 @@ from deepmrm.transform.make_target import MakePeakQualityTarget
 from deepmrm.train.trainer import BaseTrainer
 from deepmrm.transform.augment import (
     RandomResizedCrop, MultiplicativeJitter,
-    RandomRTShift, ShuffleSignals,
+    RandomRTShift, ReplicateTransitionWithNoise
 )
 from deepmrm.data import obj_detection_collate_fn
 
@@ -41,10 +41,12 @@ transform = T.Compose([
 
 aug_transform = T.Compose([
         MakeInput(force_resampling=True, use_rt=False),
-        MultiplicativeJitter(p=0.25, noise_scale_ub=1e-3, noise_scale_lb=1e-4),
-        T.RandomChoice([RandomRTShift(p=0.25), ShuffleSignals(p=0.25)]),
-        RandomResizedCrop(p=0.7),
-        # RandomRTShift(p=0.2),
+        T.RandomChoice([
+            ReplicateTransitionWithNoise(p=0.2),
+            RandomRTShift(p=0.25), 
+            MultiplicativeJitter(p=0.25, noise_scale_ub=1e-3, noise_scale_lb=1e-4),
+        ]),
+        RandomResizedCrop(p=0.7, manual_bd_only=False),
         MakePeakQualityTarget()
     ])
 
@@ -53,7 +55,7 @@ def run_qs_model(model_name, num_epochs=100, batch_size=512, augmentation=True):
 
     logger.info(f'Start loading dataset')
     label_df, pdac_xic, scl_xic = get_metadata_df(
-                                        only_quantifiable_peak=False, 
+                                        only_peak_boundary=False, 
                                         use_scl=False)
     logger.info(f'Complete loading dataset')
 
@@ -124,5 +126,22 @@ def run_qs_model(model_name, num_epochs=100, batch_size=512, augmentation=True):
 # plt.savefig('./temp/roc_curve.jpg')
 
 if __name__ == "__main__":
-    run_qs_model('DeepMRM_QS', num_epochs=100)
-    # run_qs_model('DeepMRM_QS_L2', layers=[2, 2, 2, 2])
+    from deepmrm.train.train_boundary_detector import run_train
+    
+    run_train(
+        "DeepMRM_BD_NoAug",
+        aug_transform=None,
+        backbone='resnet18', 
+        batch_size = 512,
+        num_epochs = 100,
+        only_peak_boundary=False,
+    )
+
+    run_qs_model(
+        'DeepMRM_QS_NoAug', 
+        num_epochs=100, 
+        augmentation=False
+    )
+
+
+    
