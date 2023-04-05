@@ -138,6 +138,7 @@ dmypy.json
 !/models/DeepMRM_QS.pth
 
 /temp
+/data/PDAC_SIT_xic.pkl
 
 # visual studio workspace settings
 *.code-workspace
