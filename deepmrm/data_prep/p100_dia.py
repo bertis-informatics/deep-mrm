@@ -8,6 +8,12 @@ from pyopenms import AASequence
 from mstorch.utils.logger import get_logger
 
 from deepmrm.utils.skyline_parser import parse_skyline_file
+from mstorch.data.mass_spec.tolerance import Tolerance, ToleranceUnit
+from deepmrm.data.transition import TransitionData
+from deepmrm.data.dataset.prm import PRMDataset
+from multiprocessing import Pool
+from deepmrm.data_prep import p100_dia
+
 
 logger = get_logger('DeepMRM')
 
@@ -15,7 +21,8 @@ _conf = get_yaml_config()
 conf = _conf['P100_DIA']
 root_dir = Path(conf['ROOT_DIR'])
 
-MZML_DIR = root_dir / conf['MZML_DIR']
+#MZML_DIR = root_dir / conf['MZML_DIR']
+MZML_DIR = Path('/mnt/c/Users/jungk/Downloads/mzml')
 SKY_DIR = root_dir / conf['SKYLINE_DIR']
 XIC_DIR = root_dir/ 'xic'
 LABEL_TYPES = conf['LABEL_TYPES']
@@ -24,12 +31,6 @@ SKY_FILES = {
         'Manual': 'LINCS_P100_DIA_Plate34_Quant_OptTrans_ManualPB.sky', 
         'AvG': 'LINCS_P100_DIA_Plate34_Quant_AllTransitions.sky'
     }
-
-
-
-
-
-
 
 
 def get_spectral_lib_df():
@@ -46,12 +47,9 @@ def get_spectral_lib_df():
         
     lib_df['modified_sequence'] = lib_df['peptideModSeq'].apply(remove_label_mod)
     lib_df['modified_sequence_heavy'] = lib_df['peptideModSeq'].apply(lambda s : AASequence.fromString(s).toString())
-
     lib_df['ref_rt'] *= 60
 
-    # return lib_df[['modified_sequence', 'modified_sequence_heavy', 'ref_rt']]
     return lib_df
-
 
 
 def normalize_seq_str(seq_ser):
@@ -127,19 +125,8 @@ def get_transition_df():
 
     trans_df['seq_openms'] = trans_df.apply(get_sequence_obj, axis=1)
     trans_df = trans_df.drop(columns=['modified_sequence_heavy'])
-    #trans_df.shape
     return trans_df
     
-    # sample_df, trans_df = get_transition_df()
-    # sequence_obj = trans_df.iloc[0, -1]
-    # frag_df = TransitionData.generate_transitions(
-    #                         sequence_obj, 
-    #                         precursor_ion_charges=[2],
-    #                         product_ion_charges = [1, 2],
-    #                         min_product_length=4,
-    #                         max_product_length=99,
-    #                         min_mz=150,
-    #                         max_mz=1500)
 
 def get_sample_df():
     label_type = 'Skyline'
@@ -248,29 +235,28 @@ def _check_rt():
     tmp['ref_manual_diff'] = (tmp['manual_rt'] - tmp['ref_rt']).abs()
     tmp['sky_ref_diff'] = (tmp['sky_rt'] - tmp['ref_rt']).abs()
 
-    # tmp.loc[tmp['rt_diff'] > 60*4.8, 'rt_diff'].max()
-    # m = tmp['sky_manual_diff'] > 10 
-    # tmp[m]
-    # tmp.loc[m, 'modified_sequence'].unique()
     return tmp
 
 
-from mstorch.data.mass_spec.tolerance import Tolerance, ToleranceUnit
-from deepmrm.data.transition import TransitionData
-from deepmrm.data.dataset.prm import PRMDataset
-from multiprocessing import Pool
-from deepmrm.data_prep import p100_dia
-
-all_trans_df = get_transition_df()
-transition_data = TransitionData(all_trans_df, rt_col='ref_rt')
+transition_data = None
+extract_decoy = False
 
 def extract_xic(mzml_fname):
+    global transition_data
+    global extract_decoy
+
     rt_window_size = 20*60
     tolerance = Tolerance(20, ToleranceUnit.PPM)
-    mzml_path = p100_dia.MZML_DIR / mzml_fname
+    mzml_path = MZML_DIR / mzml_fname
+    # mzml_path = Path('/mnt/c/Users/jungk/Downloads/mzml') / mzml_fname
     print(mzml_path)
-    save_path = p100_dia.XIC_DIR / f'{mzml_path.stem}.pkl'
+    if extract_decoy:
+        save_path = p100_dia.XIC_DIR / f'{mzml_path.stem}_decoy.pkl'
+    else:
+        save_path = p100_dia.XIC_DIR / f'{mzml_path.stem}.pkl'
+
     if save_path.exists():
+        logger.info(f'{save_path} already exists')
         return
 
     ds = PRMDataset(mzml_path, transition_data, rt_window_size=rt_window_size)
@@ -279,15 +265,48 @@ def extract_xic(mzml_fname):
     print(save_path)
     return
 
-
 def run_batch_xic_extraction(n_jobs=8):
+    global transition_data
+    all_trans_df = get_transition_df()
+    transition_data = TransitionData(all_trans_df, 
+                                 peptide_id_col='modified_sequence',
+                                 rt_col='ref_rt')
+
     mzml_files = sorted(list(MZML_DIR.rglob('*.mzML')))
     with Pool(n_jobs) as p:
         p.map(extract_xic, mzml_files)
     
-        
-# if __name__ == "__main__":
-#     run_batch_xic_extraction(n_jobs=8)
-    
 
+def get_decoy_transition_df():
+    all_trans_df = get_transition_df()
+    decoy_trans = []
+    for grp, sub_df in all_trans_df.groupby(['modified_sequence', 'is_heavy']):
+        # seq = sub_df['seq_openms'].iat[0]
+        precursor_mz = sub_df['precursor_mz'].iat[0]
+        precursor_mz += np.random.randint(3, 11)
+        sub_df.loc[:, 'precursor_mz'] = precursor_mz
+        sub_df.loc[:, 'product_mz'] += np.random.randint(-5, 5, size=sub_df.shape[0])
+        decoy_trans.append(sub_df)
+    decoy_trans_df = pd.concat(decoy_trans, ignore_index=True)
+    return decoy_trans_df
+            
+
+def run_batch_decoy_xic_extraction(n_jobs=8):
+    global transition_data
+    global extract_decoy
+    
+    logger.info('Extract XICs for decoy transitions')
+    extract_decoy = True
+    all_trans_df = get_decoy_transition_df()
+    transition_data = TransitionData(all_trans_df, 
+                                 peptide_id_col='modified_sequence',
+                                 rt_col='ref_rt')
+
+    mzml_files = sorted(list(MZML_DIR.rglob('*.mzML')))
+    with Pool(n_jobs) as p:
+        p.map(extract_xic, mzml_files)    
+        
+if __name__ == "__main__":
+    # run_batch_xic_extraction(n_jobs=8)
+    run_batch_decoy_xic_extraction()
 

@@ -9,15 +9,20 @@ dotenv.load_dotenv()
 package_name = Path(__file__).parents[0].stem
 project_dir = Path(__file__).parents[1]
 
+
 private_project_dir = Path(os.getenv('PRIVATE_REPO_DIR'))
 if private_project_dir.exists():
-    data_dir = private_project_dir / 'data'
-    reports_dir = private_project_dir / 'reports'
+    private_data_dir = private_project_dir / 'data'
+    # reports_dir = private_project_dir / 'reports'
 else:
-    data_dir = project_dir / 'data'
-    reports_dir = project_dir / 'reports'
+    private_data_dir = None
+    # data_dir = project_dir / 'data'
+    # reports_dir = project_dir / 'reports'
 
 model_dir = project_dir / 'models'
+data_dir = project_dir / 'data'
+reports_dir = project_dir / 'reports'
+
 
 def get_yaml_config():
     yaml_config = yaml.load(

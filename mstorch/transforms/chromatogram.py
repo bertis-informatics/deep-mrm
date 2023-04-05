@@ -151,39 +151,6 @@ class RandomHorizontalFlip(torch.nn.Module):
 
 
 
-
-class HeavyLightSwap(torch.nn.Module):
-    pass
-
-
-class TransitionShuffle(torch.nn.Module):
-    """ shuffle the orders of transition pairs
-        Doesn't change quality and ratio labels
-    """
-
-    def __init__(self, xic_key='XIC', p=0.5):
-        super().__init__()
-        self.xic_key = xic_key
-        self.p = p
-
-    def forward(self, sample):
-
-        if torch.rand(1) > self.p:
-            return sample
-
-        xic = sample[self.xic_key]
-        # number of pairs of light and heavy peptides
-        num_transition_pairs = int(len(xic) / 2)
-        idx = np.random.permutation(list(range(num_transition_pairs)))
-        idx = np.concatenate((idx, num_transition_pairs+idx))
-        xic_shuffled = xic[idx, :]
-        sample[self.xic_key] = xic_shuffled
-
-        return sample        
-
-
-
-
 class TimeWarping(torch.nn.Module):
 
     def __init__(self, xic_key='XIC', sigma=0.2, knot=4, p=0.5):
@@ -226,7 +193,7 @@ class TimeWarping(torch.nn.Module):
 
 
 def augmentation_test():
-    from automrm.data_prep import pdac
+    from deepmrm.data_prep import pdac
     from matplotlib import pyplot as plt
     import joblib
 

@@ -1,17 +1,14 @@
 import pandas as pd
 import numpy as np
-from pathlib import Path
-import joblib
-import torch
 from torchvision import transforms as T
 
-from deepmrm import data_dir
+from deepmrm import data_dir, private_data_dir
 from deepmrm.data_prep import p100_dia
 from deepmrm.data.transition import TransitionData
 from deepmrm.transform.make_input import MakeInput
 from deepmrm.data.dataset import PRMDataset
 from deepmrm.constant import RT_KEY, XIC_KEY, TIME_KEY, TARGET_KEY
-from deepmrm.utils.peak import calculate_peak_area_with_time, calculate_peak_area_with_index
+from deepmrm.utils.peak import calculate_peak_area_with_time
 
 
 def get_quantitative_transition_df(label_type):
@@ -27,7 +24,6 @@ def get_quantitative_transition_df(label_type):
     return df
 
 
-
 def compute_manual_ratio(label_type):
     """
     Calculate peak area using manually annotated boundary and transitions
@@ -40,7 +36,9 @@ def compute_manual_ratio(label_type):
     label_df = all_quant_df.loc[:, label_type].reset_index(drop=False)
 
     q_trans_df = get_quantitative_transition_df(label_type)
-    transition_data = TransitionData(all_trans_df, rt_col='ref_rt')
+    transition_data = TransitionData(all_trans_df, 
+                                     peptide_id_col='modified_sequence',
+                                     rt_col='ref_rt')
 
     auc_results = []
     for mzml_idx, row in sample_df.iterrows():
@@ -53,7 +51,7 @@ def compute_manual_ratio(label_type):
         m = (label_df['sample_id'] == sample_id) & (label_df['ratio'].notnull()) \
             & (label_df['start_time'].notnull()) & (label_df['end_time'].notnull())
 
-        if ~np.any(m):
+        if not np.any(m):
             continue
         
         metadata_df = label_df[m]
@@ -95,15 +93,23 @@ def compute_manual_ratio(label_type):
             auc_results.append(ret)
     ratio_df = pd.DataFrame(auc_results)
     return ratio_df
-    #ratio_df.to_csv(data_dir / 'p100_dia_ratio.csv', index=False)
+
 
 def compute_area_ratio():
     df1 = compute_manual_ratio('Manual')
     df2 = compute_manual_ratio('AvG')
     df2.columns = [col.replace('manual', 'AvG') for col in df2.columns]
     df = df1.merge(df2, on=['sample_id', 'modified_sequence'])
-    df.to_csv(data_dir / 'p100_dia_ratio.csv', index=False)
+    # df.to_csv(data_dir / 'p100_dia_ratio.csv', index=False)
+    return df
+
 
 def get_manual_ratio_df():
-    df = pd.read_csv(data_dir / 'p100_dia_ratio.csv')
+    save_path = data_dir / 'P100_DIA_ratio.csv'
+    if not save_path.exists():
+        df = compute_area_ratio()
+        df.to_csv(save_path, index=False)
+    else:
+        df = pd.read_csv(save_path)
+    
     return df

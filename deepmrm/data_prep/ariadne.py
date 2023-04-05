@@ -1,21 +1,25 @@
 from pathlib import Path
 import pandas as pd
-import numpy as np
-from deepmrm import data_dir, get_yaml_config
-from mstorch.utils.logger import get_logger
+from deepmrm import get_yaml_config, data_dir
 
-from deepmrm.utils.skyline_parser import parse_skyline_file
-
-logger = get_logger('DeepMRM')
 
 _conf = get_yaml_config()
 conf = _conf['Ariadne']
-root_dir = Path(conf['ROOT_DIR'])
+MZML_DIR = Path(conf['ROOT_DIR']) / 'mzML'
+DATA_DIR = data_dir / 'Ariadne'
+MULTI_FACTORS = {
+    'Noisy': 10, 
+    'SmoothBack': 1,
+    'Smooth': 1,
+}
+DATASETS = list(MULTI_FACTORS)
+
+peptide_id_col='peptide_id'
 
 
 def get_trans_df():
-
-    df = pd.read_excel(root_dir / 'supplementary/other/transList.xlsx')
+    # df = pd.read_excel(root_dir / 'supplementary/other/transList.xlsx')
+    df = pd.read_excel(DATA_DIR / 'transList.xlsx')
     df = df.rename(columns={
                 'Q1': 'precursor_mz', 
                 'Q3': 'product_mz', 
@@ -30,16 +34,12 @@ def get_trans_df():
 
 
 def get_mzml_files():
-    mzml_dir = root_dir / 'mzML'
-    
-    dfs = [
-        get_skyline_result_df('Noisy'),
-        get_skyline_result_df('SmoothBack'),
-        get_skyline_result_df('Smooth')
-    ]
 
+    dfs = [
+        get_skyline_result_df(ds_name) for ds_name in DATASETS
+    ]
     mzml_files = [
-        mzml_dir / f'{x}.mzML' for df in dfs for x in df['File Name'].unique()
+        MZML_DIR / f'{x}.mzML' for df in dfs for x in df['File Name'].unique()
     ]
 
     return mzml_files
@@ -47,13 +47,25 @@ def get_mzml_files():
 
 def get_skyline_result_df(dataset):
     
-    assert dataset in ['Noisy', 'SmoothBack', 'Smooth']
+    assert dataset in DATASETS
 
-    df = pd.read_csv(root_dir / f'Results_Skyline_{dataset}.tsv', sep='\t')
+    # df = pd.read_csv(root_dir / f'Results_Skyline_{dataset}.tsv', sep='\t')
+    df = pd.read_csv(DATA_DIR / f'Results_Skyline_{dataset}.tsv', sep='\t')
+
+    bd_df = pd.read_csv(DATA_DIR / f'Peak Boundaries_{dataset}.csv')
+    bd_df['peptide_id'] = bd_df.apply(lambda x: f'{x["Peptide Modified Sequence"]}_{x["Precursor Charge"]}+', axis=1)
+    # heavy & light peptides
+    bd_df = bd_df.drop_duplicates(['File Name', 'peptide_id'], keep='first')
+
     m = df['Protein Name'].str.startswith('RT-Kit')
     df = df[~m].reset_index(drop=True)
-
     df['peptide_id'] = df.apply(lambda x: f'{x["Peptide Sequence"]}_{x["Precursor Charge"]}+', axis=1)
+    
+    # merge with peak boundaries
+    cols = ['File Name', 'peptide_id', 'Min Start Time', 'Max End Time']
+    df = df.merge(bd_df[cols], on=['File Name', 'peptide_id'], how='left')
+    assert df['Min Start Time'].isnull().sum() == 0
+    assert df['Max End Time'].isnull().sum() == 0
 
     def extract_heavy_amount(replicate_name):
         s = replicate_name.split('_')

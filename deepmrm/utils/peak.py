@@ -58,7 +58,7 @@ def calculate_peak_area_with_time(time, intensity, start_time, end_time, return_
     return peak_area, background
 
 
-def calculate_peak_area_with_index(time, intensity, start_idx, end_idx):
+def calculate_peak_area(time, intensity, start_idx, end_idx):
     
     x = time[start_idx:end_idx+1]
     y = intensity[start_idx:end_idx+1]

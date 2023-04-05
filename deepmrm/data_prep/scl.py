@@ -1,10 +1,14 @@
+import joblib
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
 from pyopenms import MzMLFile
 from deepmrm.data.mrm_experiment import MRMExperiment
-from deepmrm import get_yaml_config, data_dir
+from deepmrm import get_yaml_config, data_dir, private_data_dir
+from deepmrm.data.dataset import MRMDataset
+from deepmrm.data.transition import TransitionData
+from mstorch.data.mass_spec.tolerance import Tolerance
 
 _conf = get_yaml_config()
 conf = _conf['SCL-MASTOCHK1']
@@ -13,7 +17,61 @@ SCL_DIR = Path(conf['ROOT_DIR'])
 SCL_MZML_DIR = Path(conf['MZML_DIR'])
 
 
-def read_scl_data(excel_path):
+def get_transition_df():
+    trans_df = pd.read_csv(private_data_dir/'SCL_transition.csv')
+    return trans_df
+
+
+def get_label_df():
+    
+    label_df = pd.read_csv(private_data_dir / 'SCL_label.csv')
+    label_df['replicate_id'] = 0
+    label_df['manual_peak_quality'] = [np.ones(1, dtype=np.int32)]*label_df.shape[0]
+    for col in label_df.select_dtypes(include=[np.object_]).columns.difference(['manual_peak_quality']):
+        label_df[col] = label_df[col].astype(str)
+
+    return label_df
+
+
+def _create_chrom_df():
+
+    save_path = private_data_dir / 'SCL_xic.pkl'
+    # raw_label_df = load_raw_label_df()
+    label_df = get_label_df()
+    trans_df = get_transition_df()
+    trans_data = TransitionData(trans_df, rt_col='retention_time')
+    tmp_df = label_df.drop_duplicates(['patient_id', 'mzML'], keep='first')
+
+    xic_data = dict()
+    for idx, row in tmp_df.iterrows():
+        sample_id = row['patient_id']
+        mzml_file = row['mzML']
+        mzml_path = SCL_MZML_DIR / mzml_file
+        
+        ds = MRMDataset(
+            file_path=mzml_path,
+            transition_data=trans_data,
+        )
+        tolerance = Tolerance(100)
+        ds.extract_data(tolerance)
+
+        for i in range(len(ds)):
+            sample = ds[i]
+            pep_id = sample['peptide_id']
+            key = (sample_id, pep_id)
+            xic_data[key] = sample['XIC']
+    joblib.dump(xic_data, save_path)            
+
+
+def get_metadata_df():
+
+    xic_data = joblib.load(private_data_dir / 'SCL_xic.pkl')
+    label_df = get_label_df()
+
+    return label_df, xic_data 
+
+
+def _read_scl_data(excel_path):
 
     wiff_files = list(excel_path.parent.rglob('*.wiff'))
     df_ = pd.read_excel(excel_path, skiprows=None, header=[0,1])
@@ -41,96 +99,5 @@ def load_raw_label_df():
     ]
 
     df = pd.concat([
-                read_scl_data(fpath) for fpath in excel_files])
+                _read_scl_data(fpath) for fpath in excel_files])
     return df
-
-
-def get_transition_df():
-
-    transition_list = [
-        ['APOC1', 'APOC1_L', False, 4.3, 526.748, 776.378],
-        ['APOC1', 'APOC1_H', True, 4.3, 530.755, 784.393],
-        ['CA1', 'CA1_L', False, 7.2, 485.8, 758.441],
-        ['CA1', 'CA1_H', True, 7.2, 489.807, 766.455],
-        ['CHL1', 'CHL1_L', False, 4.6, 478.78, 744.4],
-        ['CHL1', 'CHL1_H', True, 4.6, 483.784, 754.408]
-    ]
-
-    cols = [
-        'compound_id', 'peptide_code', 
-        'is_heavy', 'retention_time',
-        'precursor_mz', 'product_mz'
-    ]
-    trans_df = pd.DataFrame(transition_list, columns=cols)
-    return trans_df
-
-
-def prepare_dataset():
-
-    raw_label_df = load_raw_label_df()
-    trans_df = get_transition_df()
-    cols = ['sample_id', 'compound_id', 'peptide_type', 
-            'auc', 'height', 'rt', 'xic']
-
-    all_data = []
-    for idx, row in raw_label_df.iterrows():
-        print(idx)
-        mzml_file = row['mzML']
-        mzml_path = SCL_MZML_DIR / mzml_file
-
-        exp = MRMExperiment()
-        mzml = MzMLFile()
-        mzml.load(str(mzml_path), exp)
-        
-        for _, t_row in trans_df.iterrows():
-            pep_code = t_row['peptide_code']
-            q1 = t_row['precursor_mz'] 
-            q3 = t_row['product_mz'] 
-            chrom_idx = exp.find_chromatogram_index(q1, q3)
-            x, y = exp.getChromatogram(chrom_idx).get_peaks()
-            chrom = np.stack((x, y))
-
-            all_data.append([
-                row.name,
-                t_row['compound_id'],
-                'heavy' if t_row['is_heavy'] else 'light',
-                row[(pep_code, 'Area')], 
-                row[(pep_code, 'Height')], 
-                row[(pep_code, 'Retention Time')],
-                chrom
-            ])
-
-    a_df = pd.DataFrame(all_data, columns=cols)
-    #a_df.set_index(['sample_id', 'compound_id', 'peptide_type']).unstack(level=2)
-    a_df['xic'] = a_df['xic'].apply(lambda x : x.astype(np.float32)) # reduce size
-    a_df.to_pickle(data_dir/'SCL_label_df.pkl')
-    return a_df
-
-
-def get_metadata_df():
-    fpath = data_dir/'SCL_label_df.pkl'
-    if fpath.exists():
-        scl_df = pd.read_pickle(fpath)
-    else:
-        scl_df = prepare_dataset()
-
-    scl_df = scl_df.set_index(['sample_id', 'compound_id', 'peptide_type']).unstack(level=2)
-    scl_df.columns = [f'{col[1]}_{col[0]}' for col in scl_df.columns]
-    scl_df['peptide_code'] = scl_df.index.get_level_values(1)
-    scl_df['selected_charge'] = 0
-    scl_df['ion_order'] = True
-    scl_df['manual_ratio'] = scl_df['light_auc'] / scl_df['heavy_auc']
-    scl_df['manual_ratio_desc'] = np.nan
-    scl_df['patient_id'] = scl_df.index.get_level_values(0)
-    scl_df['replicate_id'] = 0
-    scl_df['manual_quality'] = 1 # MC1 data is always quantifiable
-    scl_df = scl_df.reset_index(drop=True)
-    scl_df.index.name = 'label_idx'
-
-    scl_chrom = scl_df[['light_xic', 'heavy_xic']]
-    scl_df = scl_df.drop(columns=['light_xic', 'heavy_xic', 'heavy_height', 'light_height'])
-
-    bd_df = pd.read_csv(data_dir / 'scl_peak_boundary.csv')
-    scl_df = scl_df.join(bd_df)
-    
-    return scl_df, scl_chrom

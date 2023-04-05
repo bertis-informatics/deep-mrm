@@ -134,6 +134,10 @@ dmypy.json
 # large model files
 /models/*
 !/models/DeepMRM_Model.pth
+!/models/DeepMRM_BD.pth
+!/models/DeepMRM_QS.pth
+
+/temp
 
 # visual studio workspace settings
 *.code-workspace

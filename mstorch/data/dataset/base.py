@@ -20,12 +20,6 @@ logger = get_logger()
 
 class BaseDataset(torch.utils.data.Dataset, ABC):
 
-    """
-    Base class for Dataset.
-    Dataset 클래스는 metadata를 가지고서, data를 어떻게 로딩해야 하는지를 구현해야 한다
-    metadata는 tabular data로써 pandas.DataFrame으로 관리되며, 필요한 전처리는 
-    torchvision.transforms.Compose 로 묶여서 관리된다.
-    """
     def __init__(self, 
                  metadata_df,
                  transform=None):
@@ -88,29 +82,27 @@ class BaseDataset(torch.utils.data.Dataset, ABC):
             raise ValueError('There are duplicated indexes in metadata_df')
 
         metadata_df = metadata_df.copy()
-        # pytorch DataLoader에서 data collate할 때, tensor로 변환하게 되는데 datetime 형식 등의 데이터들은 별도의 처리가 필요함.
-        # custom collate_fn을 구현할 수도 있겠으나, simplicity를 위해 이들을 string이나 integer로 변환.
-        # 참고: https://github.com/pytorch/pytorch/blob/master/torch/utils/data/_utils/collate.py
-        exclude_columns = list()
-        for col in metadata_df.select_dtypes(include=['bool', 'datetime', np.object_]):
-            if metadata_df[col].dtype == 'bool':
-                metadata_df[col] = metadata_df[col].astype(np.int64)
-                # logger.debug(f'{col} 컬럼을 bool 타입에서 integer 타입으로 변환')
-            elif metadata_df[col].dtype.type == np.datetime64:
-                metadata_df[col] = metadata_df[col].astype(str)
-                # logger.debug(f'{col} 컬럼을 datetime 타입에서 string 타입으로 변환')
-            else:
-                try:
-                    metadata_df[col] = metadata_df[col].astype(str)
-                    # logger.debug(f'{col} 컬럼을 object 타입에서 string 타입으로 변환')
-                except:
-                    logger.warning(f'{col} 컬럼을 object 타입에서 string 타입으로 변환 실패. 메타 데이터에서 제외')
-                    exclude_columns = [col]
         
-        if len(exclude_columns) > 0:
-            # 변환에 실패한 컬럼은 아예 metadata_df 에서 제외
-            logger.warning(f'{exclude_columns} 컬럼들은 포맷 변환에 실패하여, metadata에서 제외')
-            metadata_df = metadata_df.select_dtypes(exclude=exclude_columns)
+        # # pytorch DataLoader에서 data collate할 때, tensor로 변환하게 되는데 datetime 형식 등의 데이터들은 별도의 처리가 필요함.
+        # # custom collate_fn을 구현할 수도 있겠으나, simplicity를 위해 이들을 string이나 integer로 변환.
+        # # 참고: https://github.com/pytorch/pytorch/blob/master/torch/utils/data/_utils/collate.py
+        # exclude_columns = list()
+        # for col in metadata_df.select_dtypes(include=['bool', 'datetime', np.object_]):
+        #     if metadata_df[col].dtype == 'bool':
+        #         metadata_df[col] = metadata_df[col].astype(np.int64)
+        #     elif metadata_df[col].dtype.type == np.datetime64:
+        #         metadata_df[col] = metadata_df[col].astype(str)
+        #     else:
+        #         try:
+        #             metadata_df[col] = metadata_df[col].astype(str)
+        #         except:
+        #             logger.warning(f'{col} type conversion fail')
+        #             exclude_columns = [col]
+        
+        # if len(exclude_columns) > 0:
+        #     # 변환에 실패한 컬럼은 아예 metadata_df 에서 제외
+        #     logger.warning(f'{exclude_columns} columns are excluded from metadata')
+        #     metadata_df = metadata_df.select_dtypes(exclude=exclude_columns)
 
         self.metadata_df = metadata_df
         return self
