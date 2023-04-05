@@ -1,3 +1,4 @@
+import time
 import pandas as pd
 import numpy as np
 import torch
@@ -50,10 +51,11 @@ if is_decoy:
 else:
     save_path = reports_dir/f'{dataset_name}_output_df.pkl'
 
-# sample_df = all_sample_df.sample(10)
-sample_df = all_sample_df
+sample_df = all_sample_df.sample(10, random_state=2023)
+# sample_df = all_sample_df
 
 if not save_path.exists():
+    st_tm = time.time()
     output_dfs = []
     for mzml_idx, row in sample_df.iterrows():
         mzml_path = p100_dia.MZML_DIR / row['mzml_file']
@@ -99,6 +101,10 @@ if not save_path.exists():
         print(f'Completed {len(output_dfs)}/{sample_df.shape[0]} files')
 
     output_dfs = pd.concat(output_dfs, ignore_index=True)
+    ed_tm = time.time()
+    (ed_tm-st_tm)/sample_df.shape[0]
+    (ed_tm-st_tm)/output_dfs.shape[0]
+    
     output_dfs.to_pickle(save_path)
 else:
     output_dfs = pd.read_pickle(save_path)
@@ -170,21 +176,6 @@ pr_df = pd.DataFrame.from_dict({
 save_path = reports_dir / f'{dataset_name}_pr_df.pkl'
 pr_df.to_pickle(save_path)
 
-
-## AVG ratio
-# y_pred = new_output_df.loc[gt, 'AvG_ratio']
-# ape = np.abs(y_true - y_pred)/y_true
-# aape = np.arctan(ape)
-
-# ret = dict()
-# ret['PCC'] = pearsonr(y_true, y_pred)[0]
-# ret['SPC'] = spearmanr(y_true, y_pred)[0]
-# ret['MAPE'] = ape.mean()
-# ret['MdAPE'] = ape.median()
-# ret['MAAPE'] = aape.mean()
-
-# print(ret)
-# pd.DataFrame.from_dict(ret, orient='index').T
 
 
 

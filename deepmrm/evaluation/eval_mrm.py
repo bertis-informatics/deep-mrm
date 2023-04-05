@@ -24,7 +24,8 @@ batch_size = 32
 num_workers = 4
 dataset_name = 'MRM'
 
-model, model_qs = _load_models(model_dir)
+model, model_qs = _load_models(model_dir, device=torch.device('cpu'))
+model, model_qs = model.to(torch.device('cuda')), model_qs.to(torch.device('cuda'))
 
 mzml_dir = eoc.MZML_DIR
 meta_df, trans_df = eoc.get_metadata_df()
@@ -35,7 +36,11 @@ mz_tol = Tolerance(0.5, ToleranceUnit.MZ)
 
 save_path = Path(reports_dir/f'{dataset_name}_output_df.pkl')
 
+mzml_files = np.random.choice(mzml_files, size=20)
+import time
+
 if not save_path.exists():
+    st_tm = time.time()
     output_dfs = []
     for mzml_idx, mzml_name in enumerate(mzml_files):
         mzml_path = mzml_dir / mzml_name
@@ -83,17 +88,23 @@ if not save_path.exists():
         output_df = output_df.join(quant_df[cols], how='left')
         output_dfs.append(output_df)    
         print(f'Completed {mzml_idx+1}/{len(mzml_files)} files')
-    
+    ed_tm = time.time()
     output_dfs = pd.concat(output_dfs, ignore_index=True)
+    (ed_tm-st_tm)/len(mzml_files)
+    (ed_tm-st_tm)/output_dfs.shape[0]
+
+
     output_dfs.to_pickle(save_path)
 else:
     output_dfs = pd.read_pickle(save_path)
 
     
-# gt_mask = output_dfs['start_time'].notnull()
-# ### exclude truncated XICs?? 
-# gt_mask &= output_dfs['start_time'] - output_dfs['xic_start'] > 10
-# gt_mask &= output_dfs['xic_end'] - output_dfs['end_time'] > 10
+##### gt_mask = output_dfs['start_time'].notnull()
+######## exclude truncated XICs?? 
+##### gt_mask &= output_dfs['start_time'] - output_dfs['xic_start'] > 10
+##### gt_mask &= output_dfs['xic_end'] - output_dfs['end_time'] > 10
+
+
 
 iou_thresholds = list(np.arange(1, 10)*0.1)
 

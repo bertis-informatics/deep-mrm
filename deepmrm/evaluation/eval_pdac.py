@@ -62,6 +62,8 @@ metric_results, output_df = compute_peak_detection_performance(
 perf_df = create_perf_df(metric_results)
 perf_df
 
+output_df['ious']
+
 # precisions = metric_results['precisions']['30_det1']
 # recalls = metric_results['recalls']['30_det1']
 # m = recalls > -1
@@ -88,11 +90,14 @@ quant_df = calculate_area_ratio(
                 xic_score_th=0.5)
 cols = [
         'selected_transition', 'quality_score', 
-        'manual_ratio', 'pred_ratio', 'pred0_ratio'
+        'manual_ratio', 'pred_ratio', 'pred0_ratio', 'iou'
     ]
 output_df = output_df.drop(columns=['manual_ratio'])
 output_df = output_df.join(quant_df[cols], how='left')
 
+
+
+quant_df = output_df
 # import joblib
 # joblib.dump((output_df, metric_results), save_path)
 
@@ -101,6 +106,21 @@ y_pred = quant_df.loc[:, 'pred_ratio']
 m = y_true.notnull()
 y_true = y_true[m]
 y_pred = y_pred[m]
+iou = quant_df.loc[m, 'iou']
+ape = np.abs(y_true - y_pred)/y_true
+aape = np.arctan(ape)
+
+iou_effect = []
+for iou_cutoff in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+    m = (iou_cutoff <= iou) & (iou < iou_cutoff+0.1)
+    iou_effect.append([np.sum(m),
+    ape[m].mean(),
+    aape[m].mean(),
+    pearsonr(y_true[m], y_pred[m])[0],
+    spearmanr(y_true[m], y_pred[m])[0],])
+
+pd.DataFrame(iou_effect)
+
 
 quant_df['APE'] = np.abs(y_true - y_pred)/y_true
 quant_df['AAPE'] = np.arctan(quant_df['APE'])

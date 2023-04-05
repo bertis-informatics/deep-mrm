@@ -37,7 +37,7 @@ max_detection_thresholds = [1, 3]
 dotp_threshold = 0.8
 mz_tol = Tolerance(20, ToleranceUnit.PPM)
 transition_data = TransitionData(trans_df, rt_col='ref_rt', peptide_id_col='modified_sequence')
-model, model_qs = _load_models(model_dir)
+model, model_qs = _load_models(model_dir, device=torch.device('cuda'))
 
 m = meta_df['is_heavy']
 dotp_heavy = meta_df.loc[m, ['sample_id', peptide_id_col, 'dotp']].copy()

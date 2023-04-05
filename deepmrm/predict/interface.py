@@ -16,7 +16,7 @@ from deepmrm.data.dataset import MRMDataset, PRMDataset
 from deepmrm.model import load_models
 
 logger = get_logger('DeepMRM')
-device = torch.device('cpu')
+#device = torch.device('cpu')
 
 _boundary_detector = None
 _quality_scorer = None
@@ -76,7 +76,7 @@ def create_prediction_results(test_ds, output_df, peptide_id_col=None, quality_t
     return pred_results
 
 
-def _load_models(model_dir, boundary_threshold=0.05, nms_thresh=0.3):
+def _load_models(model_dir, boundary_threshold=0.05, nms_thresh=0.3, device=torch.device('cpu')):
     global _boundary_detector, _quality_scorer
     model_dir = Path(model_dir)
 

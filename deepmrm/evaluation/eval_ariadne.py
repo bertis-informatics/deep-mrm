@@ -339,43 +339,46 @@ pd.DataFrame.from_dict(d, orient='index')
 
 #### Create boxplots
 datasets = ariadne.DATASETS[:2]
-#fig, axs = plt.subplots(len(datasets), 3, figsize=(17, 13))
-fig, axs = plt.subplots(len(datasets), 3, figsize=(15, 12))
-for i, dataset in enumerate(datasets):
-    quant_df = ariadne_ret[dataset]
 
-    if dataset == 'Noisy': # sub-optimal without background
-        ylim = [-12, 12]
-    else: # optimal with or without background
-        ylim = [-10, 10]
-    
-    for k in range(len(methods)):
-        method = methods[k]
-        # alg_name = method.split(' ')[0]
-        m = quant_df[f'{method} abundance prediction'].notnull()
-        if method == 'DeepMRM':
-            m &= (quant_df['DeepMRM_BD_score'] > BD_SCORE_TH)
-            m &= (quant_df['DeepMRM_QS_score'] > QS_SCORE_TH)
 
-        quant_df['Log2 [Heavy peptide abundance]'] = np.log2(quant_df[f'{method} abundance prediction'])
+# fig, axs = plt.subplots(len(datasets), 3, figsize=(15, 12))
+fig, axs = plt.subplots(1, 3, figsize=(15, 6))
+dataset = datasets[0]
 
-        ax = axs[i, k]
-        _ = quant_df[m].boxplot(
-            'Log2 [Heavy peptide abundance]', 
-            by='Heavy peptide abundance (fmole)',
-            showfliers=True,
-            flierprops=dict(markerfacecolor='grey', marker='.'),
-            ax=ax,
-            grid=False
-        )
 
-        x_ticks = ax.xaxis.get_majorticklocs()
-        x_labels = ax.xaxis.get_majorticklabels()
-        x_labels = [float(x.get_text()) for x in x_labels]
-        ax.plot(x_ticks, np.log2(x_labels), 'r', linestyle='dotted', linewidth=2)
-        ax.set_xticklabels(list(map(lambda x : x if x < 1 else int(x), x_labels)))
-        ax.set_title(f'{method}', fontsize=18)
-        ax.set_ylim(ylim)
+quant_df = ariadne_ret[dataset]
+if dataset == 'Noisy': # sub-optimal without background
+    ylim = [-12, 12]
+else: # optimal with or without background
+    ylim = [-10, 10]
+
+for k in range(len(methods)):
+    method = methods[k]
+    # alg_name = method.split(' ')[0]
+    m = quant_df[f'{method} abundance prediction'].notnull()
+    if method == 'DeepMRM':
+        m &= (quant_df['DeepMRM_BD_score'] > BD_SCORE_TH)
+        m &= (quant_df['DeepMRM_QS_score'] > QS_SCORE_TH)
+
+    quant_df['Log2 [Heavy peptide abundance]'] = np.log2(quant_df[f'{method} abundance prediction'])
+
+    ax = axs[k]
+    _ = quant_df[m].boxplot(
+        'Log2 [Heavy peptide abundance]', 
+        by='Heavy peptide abundance (fmole)',
+        showfliers=True,
+        flierprops=dict(markerfacecolor='grey', marker='.'),
+        ax=ax,
+        grid=False
+    )
+
+    x_ticks = ax.xaxis.get_majorticklocs()
+    x_labels = ax.xaxis.get_majorticklabels()
+    x_labels = [float(x.get_text()) for x in x_labels]
+    ax.plot(x_ticks, np.log2(x_labels), 'r', linestyle='dotted', linewidth=2)
+    ax.set_xticklabels(list(map(lambda x : x if x < 1 else int(x), x_labels)))
+    ax.set_title(f'{method}', fontsize=18)
+    ax.set_ylim(ylim)
 
 for ax in axs.flat:
     ax.set(xlabel='Heavy peptide abundance (fmole)', 
@@ -396,7 +399,46 @@ for ax in axs.flat:
 
 fig.suptitle('')
 fig.tight_layout()
-plt.savefig(fig_dir / 'ariadne_boxplot.jpg')
+plt.savefig(fig_dir / f'ariadne_boxplot_{dataset}.jpg')
+
+
+###################
+datasets = ariadne.DATASETS[:2]
+#fig, axs = plt.subplots(len(datasets), 3, figsize=(17, 13))
+n_box = dict()
+for i, dataset in enumerate(datasets):
+    quant_df = ariadne_ret[dataset]
+    n_box[dataset] = dict()
+    
+    for k in range(len(methods)):
+        method = methods[k]
+        n_box[dataset][method] = dict()
+        m = quant_df[f'{method} abundance prediction'].notnull()
+        if method == 'DeepMRM':
+            m &= (quant_df['DeepMRM_BD_score'] > BD_SCORE_TH)
+            m &= (quant_df['DeepMRM_QS_score'] > QS_SCORE_TH)
+
+        quant_df['Log2 [Heavy peptide abundance]'] = np.log2(quant_df[f'{method} abundance prediction'])
+        # ax = axs[i, k]
+        ret = _ = quant_df[m].boxplot(
+            'Log2 [Heavy peptide abundance]', 
+            by='Heavy peptide abundance (fmole)',
+            showfliers=True,
+            flierprops=dict(markerfacecolor='grey', marker='.'),
+            # ax=ax,
+            grid=False
+        )
+        #cols_ = ['Log2 [Heavy peptide abundance]', 'Heavy peptide abundance (fmole)']
+        for x, sub_df in quant_df[m].groupby('Heavy peptide abundance (fmole)'):
+            y = sub_df['Log2 [Heavy peptide abundance]']
+            # q1 = y.quantile(0.25)
+            # q3 = y.quantile(0.75)
+            n_box[dataset][method][x] = len(y)
+            
+
+pd.DataFrame.from_dict(n_box['Noisy'], orient='index')
+pd.DataFrame.from_dict(n_box['SmoothBack'], orient='index')
+###############
 
 
 

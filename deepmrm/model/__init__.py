@@ -16,7 +16,7 @@ def load_models(model_dir, device):
     else:
         raise ValueError(f'Cannot find {model_path}')    
 
-    model_path = model_dir/'DeepMRM_QS_ExtBD.pth'
+    model_path = model_dir/'DeepMRM_QS.pth'
     if model_path.exists():
         logger.info(f'load model from {model_path}')
         quality_scorer = torch.load(model_path, map_location=device)
