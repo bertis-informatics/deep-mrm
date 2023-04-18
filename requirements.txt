@@ -1,17 +1,17 @@
 # packages for cpu-only
 torch==1.11.0
 torchvision==0.12.0
-openpyxl==3.0.9
+torchmetrics==0.6.2
 numpy==1.21.2
 scipy==1.7.3
 scikit-learn==1.0.2
 pandas==1.4.1
 pyyaml==6.0
 python-dotenv==0.21.1
-torchmetrics==0.6.2
 tqdm==4.62.3
 joblib==1.1.0
 pyopenms==2.7.0
+openpyxl==3.0.9
 # psutil
 # opencv-python
 # matplotlib
