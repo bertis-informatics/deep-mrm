@@ -10,20 +10,15 @@ from deepmrm.predict.interface import run_deepmrm_with_mzml
 from mstorch.data.mass_spec.tolerance import Tolerance, ToleranceUnit
 
 
-# model_file_path = model_dir / 'DeepMRM_Model.pth'
 parser = argparse.ArgumentParser()
-
-parser.add_argument("-model_dir", type=str, help="directory for model files", default=model_dir)
-parser.add_argument("-data_type", type=str, help="data type (MRM, PRM or DIA)", default='MRM')
-parser.add_argument("-target", type=str, help="target tsv path")
-parser.add_argument("-input", type=str, help="mass spec file path")
+# parser.add_argument("-model_dir", type=str, help="directory for model files", default=model_dir)
 # parser.add_argument("-peptide_id_col", type=str, help="peptide ID column", default='sequence')
-parser.add_argument("-tolerance", type=float, help="Ion match tolerance (in PPM)", default=20)
-
+# parser.add_argument("-data_type", type=str, help="data type (MRM, PRM or DIA)", default='MRM')
+parser.add_argument("-target", type=str, help="target csv path")
+parser.add_argument("-input", type=str, help="mass spec file path")
+parser.add_argument("-tolerance", type=float, help="ion match tolerance (in PPM). Ignored for MRM data", default=10)
 args = parser.parse_args()
 logger = get_logger('DeepMRM')
-device = torch.device('cpu')
-
 
 
 if __name__ == "__main__":
@@ -31,21 +26,16 @@ if __name__ == "__main__":
     if (args.input is None) or (args.target is None):
         raise ValueError('mass-spec file (MzML) and target csv file should be specified')
 
-    model_path = Path(args.model)
     ms_path = Path(args.input)
     transition_path = Path(args.target)
-    #peptide_id_col = args.peptide_id_col
-
-    peptide_id_col = 'peptide_id'
     tol = args.tolerance
-    data_type = args.data_type
+    peptide_id_col = 'peptide_id'
+    # ms_path = Path('./sample_data/sample_mrm_data.mzML')
+    # transition_path = Path('./sample_data/sample_target_list.csv')
+    # tol = 10
     output_path = ms_path.parent
 
-    if model_path.exists():
-        logger.info(f'Load model file from: {model_path.absolute()}')
-        model = torch.load(model_path, map_location=device)
-    else:
-        raise ValueError(f'Cannot file model file in {model_path.absolute()}')
+    logger.info(f'Arguments: {args}')
 
     if transition_path.exists():
         logger.info(f'Load transition file from: {transition_path.absolute()}')
@@ -64,17 +54,12 @@ if __name__ == "__main__":
     else:
         raise ValueError(f'Cannot find mass-sepc file in {ms_path.absolute()}')
 
-    if data_type not in ['PRM', 'MRM', 'DIA']:
-        raise ValueError('data_type should be one of PRM, MRM, or DIA')
-    
-    logger.info(f'Arguments:\n{args}')
-
     transition_data = TransitionData(all_trans_df, peptide_id_col=peptide_id_col)
+    logger.info(f'Load total {transition_data.num_targets} target peptides')
     tolerance = Tolerance(tol, ToleranceUnit.MZ)
 
     result_dict = run_deepmrm_with_mzml(
-                    model, 
-                    data_type, 
+                    model_dir, 
                     ms_path, 
                     transition_data, 
                     tolerance)
