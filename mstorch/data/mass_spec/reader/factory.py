@@ -1,8 +1,6 @@
 from pathlib import Path
 
 from mstorch.enums import MassSpecDataFormat
-from mstorch.data.mass_spec.reader.mzml_reader import MzMLFileReader
-from mstorch.data.mass_spec.reader.xcalibur_reader import XcaliburReader
 
 class MassSpecDataReaderFactory(object):
 
@@ -15,8 +13,10 @@ class MassSpecDataReaderFactory(object):
         file_format = cls.find_mass_spec_type(file_path)
 
         if file_format == MassSpecDataFormat.MzML:
+            from mstorch.data.mass_spec.reader.mzml_reader import MzMLFileReader
             ms_reader = MzMLFileReader(file_path, in_memory)
         elif file_format == MassSpecDataFormat.XcaliburRaw:
+            from mstorch.data.mass_spec.reader.xcalibur_reader import XcaliburReader
             ms_reader = XcaliburReader(file_path)
         else:
             raise NotImplementedError()

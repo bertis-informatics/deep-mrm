@@ -13,7 +13,7 @@ from torchvision.datasets.folder import default_loader
 from sklearn.model_selection import (
     ShuffleSplit, StratifiedShuffleSplit, GroupShuffleSplit
 )
-from pyopenms import OnDiscMSExperiment
+
 from mstorch.utils import get_logger
 
 logger = get_logger()
@@ -71,10 +71,11 @@ class BaseDataset(torch.utils.data.Dataset, ABC):
     def load_image(self, img_path):
         return default_loader(img_path)
 
-    def open_msdata(self, ms_fpath):
-        od_exp = OnDiscMSExperiment()
-        od_exp.openFile(str(ms_fpath))
-        return od_exp        
+    # def open_msdata(self, ms_fpath):
+    #     from pyopenms import OnDiscMSExperiment
+    #     od_exp = OnDiscMSExperiment()
+    #     od_exp.openFile(str(ms_fpath))
+    #     return od_exp        
 
     def set_metadata(self, metadata_df):
         

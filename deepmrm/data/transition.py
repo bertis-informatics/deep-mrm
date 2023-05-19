@@ -1,4 +1,3 @@
-from pyopenms import AASequence
 import pandas as pd
 import numpy as np
 
@@ -107,6 +106,7 @@ class TransitionData(object):
         return dfs[col_ordered]
 
     def get_sequence_objects(self, modified_sequence_col):
+        from pyopenms import AASequence
         
         for tup1, tup2 in zip(self.light_trans_df.groupby(self.peptide_id_col), \
                                     self.heavy_trans_df.groupby(self.peptide_id_col)):

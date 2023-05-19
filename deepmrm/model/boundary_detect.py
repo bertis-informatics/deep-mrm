@@ -9,10 +9,9 @@ from torchvision.ops.feature_pyramid_network import ExtraFPNBlock, LastLevelMaxP
 from mstorch.utils.cuda_memory import recursive_copy_to_device
 from deepmrm.model.retinanet import RetinaNet
 from deepmrm.model.utils import BoundaryAnchorGenerator
-from deepmrm.constant import TARGET_KEY, XIC_KEY
 from deepmrm.transform.batch_xic import BatchXics
 from deepmrm.model.resnet import ResNet1x3, BasicBlock1x3, Bottleneck1x3
-from deepmrm.constant import RT_KEY, XIC_KEY, TIME_KEY, TARGET_KEY
+from deepmrm.constant import XIC_KEY, TARGET_KEY
 from mstorch.data.dataset import BaseDataset
 
 class DummyExtraFPNBlock(ExtraFPNBlock):
