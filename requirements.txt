@@ -1,4 +1,3 @@
-# packages for cpu-only
 torch==1.11.0
 torchvision==0.12.0
 torchmetrics==0.11.2
@@ -12,8 +11,3 @@ tqdm==4.62.3
 joblib==1.1.0
 pyopenms==2.7.0
 openpyxl==3.0.9
-# psutil
-# opencv-python
-# matplotlib
-# lightgbm>=3.2.1
-# seaborn

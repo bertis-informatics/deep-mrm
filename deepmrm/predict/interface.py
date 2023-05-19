@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from torchvision import transforms as T
 
+from pyopenms import OnDiscMSExperiment, MSExperiment, MzMLFile
 from mstorch.utils import get_logger
 from deepmrm.transform.make_input import MakeInput, TransitionDuplicate
 from deepmrm.constant import TIME_KEY, XIC_KEY
@@ -119,40 +120,34 @@ def run_deepmrm(model_dir, input_ds):
 
 
 
+def is_mrm_data(mzml_path):
+    exp = OnDiscMSExperiment()
+    _ = exp.openFile(str(mzml_path))
+    meta_data = exp.getMetaData()
+    n_chromatograms = meta_data.getNrChromatograms()
+    n_spectra = meta_data.getNrSpectra()
 
-def run_deepmrm_with_mzml(model_dir, data_type, mzml_path, transition_data, tolerance):
+    if n_spectra < 1 and n_chromatograms > 0:
+        return True
+    return False
+
+
+def run_deepmrm_with_mzml(model_dir, mzml_path, transition_data, tolerance):
     
     boundary_detector, quality_scorer = _load_models(model_dir)
     transform = T.Compose([MakeInput()])
 
-    if data_type == 'MRM':
+    if is_mrm_data(mzml_path):
         ds = MRMDataset(mzml_path, transition_data, transform=transform)
     else:
         ds = PRMDataset(mzml_path, transition_data, metadata_df=None, transform=transform)
 
     n_chroms = ds.ms_reader.num_chromatograms
     n_spectra = ds.ms_reader.num_spectra
-
     logger.info(f'Mass-spec data contains {n_chroms} chromatograms and {n_spectra} spectra')
-    if data_type == 'MRM' and n_chroms < 2:
-        raise ValueError('data_type was set to MRM, but there is no chromatograms')
 
     logger.info(f'Start extracting chromatograms for targeted peptides')
     ds.extract_data(tolerance=tolerance)
     logger.info(f'Complete extracting chromatograms for targeted peptides')
 
     return _run_deepmrm(boundary_detector, quality_scorer, ds)
-
-    # data_loader = torch.utils.data.DataLoader(
-    #                     ds, 
-    #                     batch_size=1, 
-    #                     num_workers=0, 
-    #                     collate_fn=obj_detection_collate_fn)
-    
-    # logger.info(f'Start predictions')
-    # output_df = model.evaluate(data_loader)
-    # result_dict = create_prediction_results(ds, output_df, transition_data.peptide_id_col)
-    # logger.info(f'Complete predictions')
-
-    # result_df = pd.DataFrame.from_dict(result_dict, orient='index')
-    # return result_df

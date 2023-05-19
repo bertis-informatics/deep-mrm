@@ -38,7 +38,7 @@ setup(
         # Each (directory, files) pair in the sequence 
         # specifies the installation directory and the files to install there.
         ('', ['config.yml']),
-        # ('models', ['models/DeepMRM_Model.pth']),
+        ('models', ['models/DeepMRM_BD.pth', 'models/DeepMRM_QS.pth']),
     ],
     keywords=[
         'proteomics', 
