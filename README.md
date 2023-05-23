@@ -4,49 +4,48 @@ DeepMRM is a targeted proteomics data interpretation package using deep-learning
 
 ## Installation (without GPUs)
 
-DeepMRM was tested on Ubuntu 20.04 and Windows 10.  
+We recommend to run DeepMRM in a conda environment such that your environment for DeepMRM and dependencies are separate from other Python environments.
 
-1. Install Anaconda or Python v3.9
-   - Anaconda: https://www.anaconda.com/download
-   - Python: https://www.python.org/downloads/
+1. Download and install Anaconda  
+   You can download Anaconda from https://www.anaconda.com/download
 
-2. Clone the repository and move to the deep-mrm directory in a terminal
+2. Create a conda environment  
+   Open the terminal (Linux or MacOS) or the Anaconda Prompt (Windows).   
+   Create a new conda environment, named `deepmrm`, and activate it by running following commands:
+
+   ```sh
+   conda create -n deepmrm python=3.9
+   conda activate deepmrm
+   ```
+
+3. Clone the repository and move to the deep-mrm directory in the terminal.
    ```sh
    git clone https://github.com/bertis-informatics/deep-mrm.git
    ```
-
-3. Create a virtual environment, and activate it
-
-   * When using conda
-      ```
-      conda create -n deepmrm python=3.9
-      conda activate deepmrm
-      ```
-
-   * When using venv module in Python standard library
-      ```sh
-      python -m venv env
-      .\env\Scripts\activate
-      ```
 
 4. Install required packages
    ```sh
    pip install -r requirments.txt
    ```
-   
-5. Install DeepMRM package
-    ```sh
-   python setup.py install
+
+5. Install DeepMRM package 
+   ```sh
+   conda develop .
    ```
+   This will output the deep-mrm directory path.
 
 
 ## How to run
-1. Open a terminal and activate the virtual environment created during the installation
+1. Open the terminal (Linux or MacOS) or the Anaconda Prompt (Windows), and activate your deepmrm conda environment created during the installation
 
-2. Run DeepMRM running script with a mass-spec file (mzML) and a target list (csv). You can find sample input files in [sample_data](https://github.com/bertis-informatics/deep-mrm/tree/main/sample_data) directory.
+2. Run DeepMRM running script with a mass-spec file (mzML) and a target list (csv).   
+You can find sample input files in [sample_data](https://github.com/bertis-informatics/deep-mrm/tree/main/sample_data) directory.  
+   For example, if you are in deep-mrm directory and want to run DeepMRM for sample data, then run the following command:
 
     ```sh
-    python deepmrm/predict/make_prediction.py -target ./sample_data/sample_target_list.csv -input ./sample_data/sample_mrm_data.mzML
+    python deepmrm/predict/make_prediction.py \
+               -target ./sample_data/sample_target_list.csv \
+               -input ./sample_data/sample_mrm_data.mzML
     ```
 
     Syntax
