@@ -2,8 +2,13 @@
 
 DeepMRM is a targeted proteomics data interpretation package using deep-learning. It takes MRM, PRM, or Data-Independent Acquisition (DIA) data and target list as input and outputs peaks of targeted peptides, along with their abundances and quality scores. The targeted endogenous (light) peptides are detected and quantified using their stable isotope labeled (heavy) peptides.
 
-## Installation (without GPUs)
 
+
+
+## Installation (without GPUs)
+You can use DeepMRM with conda environment or docker. 
+
+### Conda environment
 We recommend to run DeepMRM in a conda environment such that your environment for DeepMRM and dependencies are separate from other Python environments.
 
 1. Download and install Anaconda  
@@ -34,8 +39,17 @@ We recommend to run DeepMRM in a conda environment such that your environment fo
    ```
    This will output the deep-mrm directory path.
 
+### Docker
+1. Download and install docker desktop (https://www.docker.com/get-started/)
+2. Pull DeepMRM docker image  
+   ```
+   docker pull jungkap/deepmrm:v1.6
+   ```
+
 
 ## How to run
+
+### Conda environment
 1. Open the terminal (Linux or MacOS) or the Anaconda Prompt (Windows), and activate your deepmrm conda environment created during the installation
 
 2. Run DeepMRM running script with a mass-spec file (mzML) and a target list (csv).   
@@ -70,6 +84,19 @@ You can find sample input files in [sample_data](https://github.com/bertis-infor
             |PDAC0008|800.36676|1478.696|TRUE|       
     * -tolerance: int, default=10. Ion match tolerance (in PPM). This is ignored in the case of MRM data.
 
+### Docker
+You can run DeepMRM through docker with following command. You should specify  {local_dir_for_input_data}, {target_csv_file_name}, and {mzml_file_name} before running.  
+```
+docker run -v {local_dir_for_input_data}:/input_data jungkap/deepmrm \
+            -target /input_data/{target_csv_file_name} \
+            -input /input_data/{mzml_file_name}
+```
+For example, you can run DeepMRM for sample data in the deepmrm directory as follows.   
+In Windows, you need to replace forward slash with backslash in the local directory path.
+```
+docker run -v ./sample_data:/input_data jungkap/deepmrm:v1.6 -target /input_data/sample_target_list.csv -input /input_data/sample_mrm_data.mzML
+```
+   
 
 ## License
 Copyright©2022 [Bertis Inc.](http://bertis.com/) All rights reserved.
