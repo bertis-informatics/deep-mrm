@@ -6,7 +6,7 @@ import torch
 from mstorch.utils import get_logger
 from deepmrm import model_dir
 from deepmrm.data.transition import TransitionData
-from deepmrm.predict.interface import run_deepmrm_with_mzml
+from deepmrm.predict.interface import run_deepmrm_with_mzml, get_top1_result_df
 from mstorch.data.mass_spec.tolerance import Tolerance, ToleranceUnit
 
 
@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser()
 # parser.add_argument("-data_type", type=str, help="data type (MRM, PRM or DIA)", default='MRM')
 parser.add_argument("-target", type=str, help="target csv path")
 parser.add_argument("-input", type=str, help="mass spec file path")
-parser.add_argument("-tolerance", type=float, help="ion match tolerance (in PPM). Ignored for MRM data", default=10)
+parser.add_argument("-tolerance", type=float, help="mass match tolerance (in PPM)", default=10)
 args = parser.parse_args()
 logger = get_logger('DeepMRM')
 
@@ -30,9 +30,6 @@ if __name__ == "__main__":
     transition_path = Path(args.target)
     tol = args.tolerance
     peptide_id_col = 'peptide_id'
-    # ms_path = Path('./sample_data/sample_mrm_data.mzML')
-    # transition_path = Path('./sample_data/sample_target_list.csv')
-    # tol = 10
     output_path = ms_path.parent
 
     logger.info(f'Arguments: {args}')
@@ -56,16 +53,19 @@ if __name__ == "__main__":
 
     transition_data = TransitionData(all_trans_df, peptide_id_col=peptide_id_col)
     logger.info(f'Load total {transition_data.num_targets} target peptides')
-    tolerance = Tolerance(tol, ToleranceUnit.MZ)
+    tolerance = Tolerance(tol, ToleranceUnit.PPM)
 
-    result_dict = run_deepmrm_with_mzml(
+    raw_result_df = run_deepmrm_with_mzml(
                     model_dir, 
                     ms_path, 
                     transition_data, 
                     tolerance)
     
-    result_df = pd.DataFrame.from_dict(result_dict, orient='index')
+    result_df = get_top1_result_df(peptide_id_col, raw_result_df)
     
-    save_path = output_path/ f'{ms_path.stem}_DeepMRM.csv'
+    save_path = output_path/ f'{ms_path.stem}_DeepMRM_top1.csv'
     result_df.to_csv(save_path, index=False)
+
+    save_path = output_path/ f'{ms_path.stem}_DeepMRM.csv'
+    raw_result_df.to_csv(save_path, index=False)
     logger.info(f'Save result csv file: {save_path}')

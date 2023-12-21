@@ -1,10 +1,7 @@
-from re import S
 import numpy as np
-import pandas as pd
 import joblib
 from tqdm import tqdm
 
-from mstorch.data.mass_spec import MassSpecDataReaderFactory
 from deepmrm.data.dataset.mrm import MRMDataset
 from deepmrm.constant import TIME_KEY, XIC_KEY, HEAVY_PEPTIDE_KEY, LIGHT_PEPTIDE_KEY
 
@@ -41,15 +38,17 @@ class PRMDataset(MRMDataset):
             if spectrum.get_ms_level() != 2:
                 continue
             iso_win = spectrum.get_isolation_window()
-            rt = spectrum.get_retention_time()
+            iso_min_mz = iso_win.min_mz - tolerance.get_mz_tolerance(iso_win.min_mz)
+            iso_max_mz = iso_win.max_mz + tolerance.get_mz_tolerance(iso_win.max_mz)
 
+            rt = spectrum.get_retention_time()
             min_rt, max_rt = None, None
             if use_ref_rt:
                 min_rt = max(0, rt - rt_window_size*0.5)
                 max_rt = rt + rt_window_size*0.5
             
             trans_df = self.transition_data.find_peptides(
-                                                iso_win.min_mz, iso_win.max_mz, 
+                                                iso_min_mz, iso_max_mz, 
                                                 min_rt, max_rt)
 
             for idx, row in trans_df.iterrows():

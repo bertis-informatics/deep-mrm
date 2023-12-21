@@ -1,10 +1,14 @@
 import collections
 from abc import ABC, abstractmethod, abstractproperty
 
-_IsolationWindow = collections.namedtuple(
-                    'IsolationWindow', ['mz', 'lower_offset', 'upper_offset'])
 
-class IsolationWindow(_IsolationWindow):
+class IsolationWindow:
+
+    def __init__(self, mz, lower_offset, upper_offset):
+        self.mz = mz
+        self.lower_offset = lower_offset
+        self.upper_offset = upper_offset
+
     @property
     def min_mz(self):
         return self.mz - self.lower_offset

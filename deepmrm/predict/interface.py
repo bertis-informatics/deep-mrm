@@ -150,4 +150,38 @@ def run_deepmrm_with_mzml(model_dir, mzml_path, transition_data, tolerance):
     ds.extract_data(tolerance=tolerance)
     logger.info(f'Complete extracting chromatograms for targeted peptides')
 
-    return _run_deepmrm(boundary_detector, quality_scorer, ds)
+    result_dict = _run_deepmrm(boundary_detector, quality_scorer, ds)
+    result_df = ds.metadata_df.join(pd.DataFrame.from_dict(result_dict, orient='index'))
+
+    return result_df
+
+
+def get_top1_result_df(peptide_id_col, raw_result_df):
+    top_peaks = []
+    for idx, row in raw_result_df.iterrows():
+        pep_id = row[peptide_id_col] 
+        boxes = row['boxes']
+        if len(boxes) > 0:
+            rt_start, rt_end = boxes[0]
+            bd_score = row['scores'][0]
+            quant_score = row['quantification_scores'][0]
+            l_area = row['light_area'][0] 
+            h_area = row['heavy_area'][0]
+        else:
+            rt_start, rt_end = None, None
+            bd_score = 0
+            quant_score = 0
+            l_area = None
+            h_area = None
+        top_peaks.append([pep_id, rt_start, rt_end, l_area, h_area, bd_score, quant_score])
+
+    cols = [
+        peptide_id_col, 
+        'rt_start_in_seconds', 'rt_end_in_seconds', 
+        'light_area', 'heavy_area', 'boundary_score', 
+        'quantification_score'
+    ]
+
+    return pd.DataFrame.from_records(top_peaks, columns=cols)
+
+    

@@ -44,7 +44,7 @@ class TransitionData(object):
         return self.df[self.peptide_id_col].unique().tolist()
 
     def find_peptides(self, min_mz, max_mz, min_rt=None, max_rt=None):
-        m = (min_mz < self.df[self.precursor_mz_col]) & (self.df[self.precursor_mz_col] < max_mz)
+        m = (min_mz <= self.df[self.precursor_mz_col]) & (self.df[self.precursor_mz_col] <= max_mz)
         if (min_rt  is not None and max_rt  is not None and self.rt_col is not None):
             m &= (min_rt < self.df[self.rt_col]) & (self.df[self.rt_col] < max_rt)
         
